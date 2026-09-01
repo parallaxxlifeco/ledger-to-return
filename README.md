@@ -5,8 +5,8 @@ categorised, AUD-converted summary for the accountant, and monthly actuals for
 the two Google Sheets.
 
 **Hosted:** https://parallaxxlifeco.github.io/ledger-to-return/ — data saved to
-your Google Drive. This is the one to use. See [SETUP.md](SETUP.md) for the
-one-time GitHub Pages and Google Cloud steps.
+your Google Drive. This is the one to use. [SETUP.md](SETUP.md) records how the
+GitHub Pages site and the Google Cloud OAuth client were set up.
 
 **Claude artifact:** https://claude.ai/code/artifact/782afdb2-de89-4d8f-8080-9f67ca2b5802
 — the original, kept as a fallback until the hosted version has done a real

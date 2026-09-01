@@ -1,12 +1,19 @@
 # Setup
 
-Two things to do by hand, once. Everything else is built.
-
-Roughly 20 minutes. Do part 1 first — part 2 needs the site to exist.
+Both one-time steps are done. This is the record of what was set up, so it can be
+rebuilt or changed later.
 
 ---
 
 ## 1. Put the site on GitHub Pages
+
+**Already done** — the repo is
+[parallaxxlifeco/ledger-to-return](https://github.com/parallaxxlifeco/ledger-to-return),
+public, serving from `main` at the root, live at
+<https://parallaxxlifeco.github.io/ledger-to-return/>.
+
+<details>
+<summary>How it was set up, if you ever need to redo it</summary>
 
 **Create the repo.** At [github.com/new](https://github.com/new), under the
 `parallaxxlifeco` account:
@@ -36,9 +43,37 @@ https://parallaxxlifeco.github.io/ledger-to-return/
 
 Open it. It works immediately, saving to that browser. Drive comes next.
 
+</details>
+
 ---
 
 ## 2. Let it save to Google Drive
+
+**Already done** — Claude set this up on 1 September 2026. Recorded here so you
+can rebuild or change it later.
+
+| | |
+|---|---|
+| Google account | parallaxxlifeco@gmail.com |
+| Cloud project | `ledger-to-return` |
+| API enabled | Google Drive API |
+| Consent screen | External, in Testing, `parallaxxlifeco@gmail.com` as the sole test user |
+| OAuth client | "Ledger to Return web", Web application |
+| Authorised origins | `https://parallaxxlifeco.github.io` and `http://localhost:8899` |
+| Client ID | `989893722816-oc12c1mvous3uvql355k81qn203lfsid.apps.googleusercontent.com` |
+
+The client ID is baked into the page, so any browser you open it in already has
+it. It is public by design — it identifies the app, and Google only honours it
+from the two origins above. The client secret Google also issued is unused: the
+browser token flow doesn't take one, and nothing here stores it.
+
+To connect: open the app → **Import** → *Where your work is saved* → **Connect
+Google Drive** → choose the account → **Allow**. Google will warn that the app
+isn't verified, which is expected for an unpublished app you built for yourself:
+*Advanced* → *Go to Ledger to Return (unsafe)*.
+
+<details>
+<summary>How it was set up, if you ever need to redo it</summary>
 
 The app needs its own OAuth client so Google will let it write a file on your
 behalf. The client ID this produces is **not a secret** — it only works from the
@@ -79,8 +114,7 @@ Credentials* → *OAuth client ID*:
 **Connect it.** Open the app → **Import** → *Where your work is saved* → paste the
 client ID → **Connect Google Drive** → choose your account → Allow.
 
-You'll see "Google hasn't verified this app". That's expected for an unpublished
-app you built for yourself: *Advanced* → *Go to Ledger to Return (unsafe)*.
+</details>
 
 It writes one file, `ledger-to-return-data.json`, at the top of your Drive. The
 permission it asks for (`drive.file`) only lets it touch files it created itself —

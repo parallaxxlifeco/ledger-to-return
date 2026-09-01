@@ -1079,7 +1079,12 @@ function addParsed(){
 const DRIVE_FILE="ledger-to-return-data.json";
 const DRIVE_SCOPE="https://www.googleapis.com/auth/drive.file";
 const CID_KEY="l2r.googleClientId";
-const BAKED_CLIENT_ID="";        // filled in at build time once one exists
+/* The OAuth client ID is public by design: it identifies the app, and Google
+   only honours it from the origins registered against it (the Pages site and
+   localhost). It is not a credential and carries no access on its own. The
+   client secret this project also issued is unused — the browser token flow
+   does not take one, and none is stored here or anywhere else. */
+const BAKED_CLIENT_ID="989893722816-oc12c1mvous3uvql355k81qn203lfsid.apps.googleusercontent.com";
 
 let Store=null, DL=null, saveTimer=null, dirty=false;
 
