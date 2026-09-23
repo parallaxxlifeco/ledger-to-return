@@ -49,6 +49,30 @@ Blocks the app doesn't know fall back to neutral grey rather than borrowing a
 colour, and `rollup.test.mjs` asserts the slots are distinct, in range, and in
 sequence for all three lists.
 
+**Then, same day: a rail was not enough.** Daniel wanted the colour across the
+whole row, not a line down the side. Every row now carries a wash of its block's
+hue, mixed against the menu surface, with the heading heavier and the row the
+keyboard is on heaviest plus a 2px ring in the same hue — a ring rather than
+more strength alone, because "stronger" reads differently hue to hue and the
+cursor has to be unmistakable against seven other washes.
+
+The mix percentages are per-theme (`--tintRow`, `--tintHover`, `--tintSel`,
+`--tintHead`, `--tintEdge`): the dark steps sit lighter on a dark surface and
+need a heavier mix to read as the same wash.
+
+**That wash is what makes the text contrast worth measuring**, and it caught a
+real problem: the note beside each category was `--ink3`, which over the tint
+came out at **2.6:1** — well under the 4.5:1 floor for body text, in both
+themes. It is `--ink2` now, and `--ink` on the selected row. Worst case after
+the fix: 6.69:1 light, 5.77:1 dark.
+
+`colour.test.mjs` measures this on every row of both pick lists in both themes,
+and it does it by painting each colour onto a 1×1 canvas and reading the pixel
+back — `color-mix()` serialises as `oklab()`, so parsing the computed value with
+a regex silently returns nonsense. The first attempt did exactly that and
+reported a label contrast of 1.24:1, which was not true. If a tint percentage is
+ever nudged, this test is what notices.
+
 ---
 
 ## 23 September 2026 — Statements, read from the PDF

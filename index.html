@@ -32,6 +32,7 @@
   --r:7px;
   --cat1:#2a78d6; --cat2:#eb6834; --cat3:#1baf7a; --cat4:#eda100;
   --cat5:#e87ba4; --cat6:#008300; --cat7:#4a3aa7; --cat8:#e34948; --cat0:#75858F;
+  --tintRow:10%; --tintHover:19%; --tintSel:30%; --tintHead:24%; --tintEdge:30%;
   color-scheme:light;
 }
 @media (prefers-color-scheme:dark){
@@ -46,6 +47,8 @@
     --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px -12px rgba(0,0,0,.7);
     --cat1:#3987e5; --cat2:#d95926; --cat3:#199e70; --cat4:#c98500;
     --cat5:#d55181; --cat6:#008300; --cat7:#9085e9; --cat8:#e66767; --cat0:#76858F;
+  --tintRow:15%; --tintHover:25%; --tintSel:38%; --tintHead:30%; --tintEdge:38%;
+    --tintRow:15%; --tintHover:25%; --tintSel:38%; --tintHead:30%; --tintEdge:38%;
     color-scheme:dark;
   }
 }
@@ -251,27 +254,40 @@ em.chip-none{background:var(--warnsoft);color:var(--warn);font-style:normal;font
    and their dark steps are validated for colour-blind separation against this
    page's own surfaces — see LOG.md before changing any of them. */
 .pickopt{
-  display:flex;align-items:center;gap:9px;padding:7px 10px 7px 8px;border:0;background:transparent;cursor:pointer;
-  text-align:left;font-size:12.5px;border-bottom:1px solid var(--linesoft);
-  border-left:3px solid var(--g,var(--cat0));
+  --tint:var(--g,var(--cat0));
+  display:flex;align-items:center;gap:9px;padding:7px 10px 7px 9px;border:0;cursor:pointer;
+  text-align:left;font-size:12.5px;border-left:4px solid var(--tint);
+  background:color-mix(in srgb,var(--tint) var(--tintRow),var(--raise));
+  border-bottom:1px solid color-mix(in srgb,var(--tint) var(--tintEdge),transparent);
 }
 .pickopt:last-child{border-bottom:0}
-.pickopt:hover{background:var(--surface2)}
-.pickopt.sel{background:color-mix(in srgb,var(--g,var(--accent)) 13%,transparent)}
-.pickhead{
-  position:sticky;top:0;z-index:1;display:flex;align-items:center;gap:7px;
-  padding:5px 10px 5px 8px;background:var(--surface2);border-bottom:1px solid var(--linesoft);
-  border-left:3px solid var(--g,var(--cat0));
-  font-size:10px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--ink2);
+.pickopt:hover{background:color-mix(in srgb,var(--tint) var(--tintHover),var(--raise))}
+/* The row the keyboard is on has to be unmistakable against seven other washes,
+   so it gets the heaviest mix of its own hue plus a ring in it — strength alone
+   would read differently hue to hue. */
+.pickopt.sel{
+  background:color-mix(in srgb,var(--tint) var(--tintSel),var(--raise));
+  box-shadow:inset 0 0 0 2px color-mix(in srgb,var(--tint) 62%,transparent);
 }
-.pickhead .n{margin-left:auto;font-weight:500;letter-spacing:0;color:var(--ink3);text-transform:none}
+.pickopt.sel .nm{font-weight:600;color:var(--ink)}
+.pickopt.sel kbd{border-color:color-mix(in srgb,var(--tint) 55%,var(--line));color:var(--ink2)}
+.pickhead{
+  --tint:var(--g,var(--cat0));
+  position:sticky;top:0;z-index:1;display:flex;align-items:center;gap:7px;
+  padding:5px 10px 5px 9px;border-left:4px solid var(--tint);
+  background:color-mix(in srgb,var(--tint) var(--tintHead),var(--surface2));
+  border-bottom:1px solid color-mix(in srgb,var(--tint) 45%,transparent);
+  font-size:10px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--ink);
+}
+.pickhead .n{margin-left:auto;font-weight:500;letter-spacing:0;color:var(--ink2);text-transform:none}
 .pickopt kbd{
   font-family:"IBM Plex Mono",monospace;font-size:10px;min-width:17px;height:17px;display:grid;place-items:center;
   border:1px solid var(--line);border-radius:3px;color:var(--ink3);background:var(--surface);flex:none;
 }
 .pickopt kbd.ghost{opacity:.25}
 .pickopt .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.pickopt .note{font-size:10.5px;color:var(--ink3);white-space:nowrap}
+.pickopt .note{font-size:10.5px;color:var(--ink2);white-space:nowrap}
+.pickopt.sel .note{color:var(--ink)}
 
 .settledrow{display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--surface2);border-radius:7px;padding:9px 12px}
 .settledrow b{font-size:13px}
