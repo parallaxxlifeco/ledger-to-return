@@ -4,6 +4,47 @@ What was built, when, and what you'd need to know to change it. Newest first.
 
 ---
 
+## 23 September 2026 — Rules stop being automatic
+
+Daniel, part way through his first real sort: "Gojek is marked as a rule - but I
+realised that sometimes its not food but rather taxi. And it can be business and
+personal expense."
+
+That is the whole argument against the old default. The **Make a rule** box was
+ticked unless you noticed and unticked it, so one answer about one Gojek ride —
+food, that day — silently became every Gojek after it. A merchant that means one
+thing is the exception, not the rule; Gojek is food, a taxi, a delivery, and
+sometimes business.
+
+**The box now starts unticked.** `resetPick` sets `ruleOn=false`. Nothing is
+carried forward unless it is asked for, which is what he said he wanted back
+when the mapping was first built: manual first, learn from there.
+
+**There is a rules panel now** — the *Rules* button beside the filter chips in
+Sort. Every rule, what it fills in (with the block colours), how many rows it
+filled versus how many you answered yourself, and two ways out:
+
+- **Remove** — stop it happening again, leave what it already did.
+- **Remove & reopen** — also send back everything *the rule* filled, so those
+  come round again one at a time.
+
+The distinction is the point. Reopening only undoes rows where `auto` is true.
+A row you sat and decided keeps its answer, because the rule was wrong, not
+your judgement. After a reopen the list switches to **To sort** so the rows that
+came back are in front of you.
+
+**Backspace changed meaning.** It used to clear the row *and* delete the rule
+behind it, which conflated two very different intentions and was the only way to
+remove a rule at all. It now clears the row only. Rules are removed in the panel,
+where you can see what one has actually done before killing it.
+
+`rules.test.mjs` walks the Gojek case exactly: answering one row makes no rule
+and fills nothing else; ticking the box makes one and carries it; Backspace
+leaves it alone; Remove keeps the filled rows; Remove & reopen returns the two
+the rule filled and leaves the two answered by hand.
+
+---
+
 ## 23 September 2026 — A colour per block
 
 Daniel, sorting his first real statement: "selecting from the lists is really

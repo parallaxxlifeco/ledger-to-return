@@ -289,6 +289,12 @@ em.chip-none{background:var(--warnsoft);color:var(--warn);font-style:normal;font
 .pickopt .note{font-size:10.5px;color:var(--ink2);white-space:nowrap}
 .pickopt.sel .note{color:var(--ink)}
 
+#rulesCard{background:var(--surface);border:1px solid var(--line);border-radius:9px;padding:14px 16px;margin:0 0 12px}
+.rulerow{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:9px 0;border-bottom:1px solid var(--linesoft)}
+.rulerow:last-child{border-bottom:0}
+.rulerow .mk{font-family:"IBM Plex Mono",monospace;font-size:12px;font-weight:600;min-width:190px}
+.rulerow .n{font-size:11.5px;color:var(--ink2)}
+.rulerow .acts{margin-left:auto;display:flex;gap:7px}
 .settledrow{display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--surface2);border-radius:7px;padding:9px 12px}
 .settledrow b{font-size:13px}
 .rulebox{
@@ -516,11 +522,13 @@ tr.subtotal td:first-child{background:var(--raise)}
         <button class="chip" id="chip-xfer" data-f="xfer" aria-pressed="false">Transfers <b id="c-xfer">0</b></button>
         <button class="chip" data-f="all" aria-pressed="false">All <b id="c-all">0</b></button>
       </div>
+      <button class="btn sm" id="btnRules">Rules <b id="c-rules">0</b></button>
       <div style="flex:1;min-width:150px"><input type="text" id="listSearch" placeholder="Filter descriptions…" style="padding:5px 9px;font-size:12.5px"></div>
       <select id="acctFilter" style="width:auto;padding:5px 9px;font-size:12.5px"></select>
     </div>
     <p class="hint sorthint" id="sortHint"></p>
     </div>
+    <div id="rulesCard" style="display:none"></div>
     <div class="rows" id="rowList"></div>
   </div>
 </section>
@@ -1917,8 +1925,8 @@ function activeCard(t){
   if(isTrack()&&t.kind&&(picking||needLine)&&t.mk){
     body+=`<label class="rulebox${ruleOn?" on":""}">
       <input type="checkbox" id="ruleChk"${ruleOn?" checked":""}>
-      <span><b>Make a rule</b> — anything matching “${esc(t.mk)}” gets this answer from now on${
-        sib?`, including ${sib} already loaded`:""}</span>
+      <span><b>Make a rule</b> <kbd>r</kbd> — anything matching “${esc(t.mk)}” gets this answer from now on${
+        sib?`, including ${sib} already loaded`:""}. Leave it off for a merchant that means different things on different days.</span>
     </label>`;
   }
 
@@ -1962,7 +1970,10 @@ function focusPick(){
   const pi=$("#pickInput");
   if(pi&&document.activeElement!==pi){ pi.focus(); pi.setSelectionRange(pi.value.length,pi.value.length); }
 }
-function resetPick(){ pickQ=""; pickSel=0; pickMode=null; ruleOn=true; }
+/* A rule is opt-in, every time. It used to default on, which is how one
+   Gojek answer — food, that day — quietly became every Gojek ride after it.
+   Nothing is carried forward unless it is asked for. */
+function resetPick(){ pickQ=""; pickSel=0; pickMode=null; ruleOn=false; }
 
 /* ---------- the three answers ---------- */
 function setKind(kind){
@@ -2044,18 +2055,79 @@ function advance(nextId){
   curId=nextId||null;
   resetPick(); renderList();
 }
+/* Clear one row's answer. It leaves any rule alone — those are removed in the
+   rules panel, where you can see what a rule has actually done first. */
 function unassign(){
   const t=currentTx(); if(!t) return;
-  delete B().rules[t.mk];
   if(isTrack()){ t.kind=null; t.line=null; t.tax=null; }
   else t.cat=null;
   t.auto=false; resetPick(); markDirty(); renderList();
 }
-function recode(){
-  const t=currentTx(); if(!t||!settled(t)) return;
-  if(isTrack()) t.kind=null, t.line=null, t.tax=null;
-  else t.cat=null;
-  t.auto=false; resetPick(); markDirty(); renderList();
+
+/* ---------- rules ---------- */
+function ruleList(){
+  const bk=B();
+  return Object.keys(bk.rules||{}).map(mk=>{
+    const hits=bk.tx.filter(t=>t.mk===mk);
+    return {mk, rule:bk.rules[mk], n:hits.length, auto:hits.filter(t=>t.auto).length};
+  }).sort((a,b)=>b.auto-a.auto||b.n-a.n||(a.mk<b.mk?-1:1));
+}
+function ruleSays(r){
+  const bits=[];
+  const k=KINDS.find(x=>x.k===r.k);
+  if(k) bits.push(`<em class="chip-kind k-${r.k}">${esc(k.label)}</em>`);
+  if(r.t&&CAT[r.t]&&r.k!=="personal"&&r.k!=="transfer")
+    bits.push(`<em class="chip-cat" style="${gvar(CAT[r.t].group)}">${esc(CAT[r.t].label)}</em>`);
+  if(r.l&&TRK[r.l])
+    bits.push(`<em class="chip-line" style="${gvar(TRK[r.l].group)}">${esc(lineLabel(r.l))}</em>`);
+  return bits.join("")||`<span class="hint" style="margin:0">—</span>`;
+}
+function renderRules(){
+  const n=Object.keys(B().rules||{}).length;
+  const c=$("#c-rules"); if(c) c.textContent=n;
+  const card=$("#rulesCard");
+  if(!card||card.style.display==="none") return;
+  const rows=ruleList();
+  card.innerHTML=`
+    <div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap">
+      <div><span class="lbl">Rules</span>
+        <p class="hint" style="margin:3px 0 0;max-width:62ch">A rule answers future transactions whose description looks the same.
+        <b>Remove</b> stops it happening again and leaves what it already did.
+        <b>Remove &amp; reopen</b> also sends back everything the rule filled in, so you can answer those one at a time.</p></div>
+      <button class="btn sm" id="btnRulesClose">Close</button>
+    </div>
+    ${rows.length?rows.map(r=>`<div class="rulerow" data-mk="${esc(r.mk)}">
+        <span class="mk">${esc(r.mk)}</span>
+        ${ruleSays(r.rule)}
+        <span class="n">${r.auto} filled in${r.n-r.auto?` · ${r.n-r.auto} you answered yourself`:""}</span>
+        <span class="acts">
+          <button class="btn sm" data-rm="${esc(r.mk)}">Remove</button>
+          <button class="btn sm danger" data-rmo="${esc(r.mk)}"${r.auto?"":" disabled title=\"This rule hasn't filled anything in\""}>Remove &amp; reopen</button>
+        </span>
+      </div>`).join("")
+      :`<p class="hint" style="margin:10px 0 0">No rules yet. Tick <b>Make a rule</b> while answering to create one.</p>`}`;
+  $("#btnRulesClose").addEventListener("click",()=>{card.style.display="none";});
+  $$("#rulesCard [data-rm]").forEach(b=>b.addEventListener("click",()=>removeRule(b.dataset.rm,false)));
+  $$("#rulesCard [data-rmo]").forEach(b=>b.addEventListener("click",()=>removeRule(b.dataset.rmo,true)));
+}
+/* Reopening only undoes what the rule did. Rows answered by hand keep their
+   codes — the rule was wrong, not the day you sat and decided. */
+function removeRule(mk,reopen){
+  const bk=B();
+  if(!bk.rules[mk]) return;
+  let back=0;
+  if(reopen){
+    for(const t of bk.tx){
+      if(t.mk!==mk||!t.auto) continue;
+      if(isTrack()){ t.kind=null; t.line=null; t.tax=null; } else t.cat=null;
+      t.auto=false; back++;
+    }
+  }
+  delete bk.rules[mk];
+  markDirty();
+  if(reopen&&back){ filter="todo"; $$("#filterChips .chip").forEach(c=>c.setAttribute("aria-pressed",String(c.dataset.f==="todo"))); }
+  curId=null; resetPick(); renderAll();
+  toast(back?`Rule removed · ${back} back in the queue`:"Rule removed");
 }
 function moveCur(d){
   const list=visibleTx(); if(!list.length) return;
@@ -2107,7 +2179,7 @@ function renderShell(){
     ? `<b style="color:var(--ink2)">P</b> personal · <b style="color:var(--ink2)">B</b> business · <b style="color:var(--ink2)">T</b> transfer, done in one press · <b style="color:var(--ink2)">O</b> other · then type and press <b style="color:var(--ink2)">Enter</b>, or hit <b style="color:var(--ink2)">1–9</b>. <b style="color:var(--ink2)">↑↓</b> move · <b style="color:var(--ink2)">R</b> toggles the rule · <b style="color:var(--ink2)">Backspace</b> clears the row.`
     : `Type and press <b style="color:var(--ink2)">Enter</b>, or hit <b style="color:var(--ink2)">1–9</b>. <b style="color:var(--ink2)">↑↓</b> move · <b style="color:var(--ink2)">Backspace</b> clears the row.`;
 }
-function renderAll(){ renderShell(); renderList(); renderAccounts(); renderProgress(); renderTracks(); renderStorage(); }
+function renderAll(){ renderShell(); renderList(); renderAccounts(); renderProgress(); renderTracks(); renderRules(); renderStorage(); }
 
 /* ========================== REPORT ========================= */
 const MONTHS=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
@@ -2717,6 +2789,12 @@ $("#filterChips").addEventListener("click",e=>{
   $$("#filterChips .chip").forEach(c=>c.setAttribute("aria-pressed",String(c===b)));
   curId=null; resetPick(); renderList();
 });
+$("#btnRules").addEventListener("click",()=>{
+  const c=$("#rulesCard");
+  c.style.display=c.style.display==="none"?"":"none";
+  renderRules();
+  if(c.style.display!=="none") c.scrollIntoView({behavior:"smooth",block:"nearest"});
+});
 $("#listSearch").addEventListener("input",e=>{listQ=e.target.value;curId=null;resetPick();renderList();});
 $("#acctFilter").addEventListener("change",e=>{acctQ=e.target.value;curId=null;resetPick();renderList();});
 
@@ -2750,6 +2828,8 @@ document.addEventListener("keydown",e=>{
     return;
   }
   if(e.key==="Escape"){ e.preventDefault(); if(pickQ){pickQ="";pickSel=0;renderList();focusPick();} return; }
+  /* Backspace clears this row only. Rules are removed in the rules panel,
+     where what one has already done is visible before you kill it. */
   if(e.key==="Backspace"&&!pickQ){ e.preventDefault(); unassign(); return; }
 
   /* The three answers, while nothing is typed into the picker. */
