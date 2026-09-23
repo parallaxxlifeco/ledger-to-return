@@ -4,6 +4,73 @@ What was built, when, and what you'd need to know to change it. Newest first.
 
 ---
 
+## 23 September 2026 — Statements, read from the PDF
+
+Daniel: NetBank's CSV export is capped at a row count, so it drops transactions
+and can't be trusted for a year. The PDF statement per month is what he actually
+has. So the importer now reads them.
+
+**pdf.js is vendored** in `vendor/pdfjs/` (Apache 2.0, LICENSE alongside) rather
+than pulled from a CDN. Three reasons: GitHub Pages only serves what is in the
+repo, the reader then works with no third-party script and no CDN outage, and
+the tests can run offline. `part_c2c.js` lazy-loads it on the first PDF, so the
+1.5 MB is never fetched by someone who only ever pastes CSV. Published as a
+Claude artifact there is no vendor folder, and the import says "convert to CSV
+first" rather than half-working.
+
+**How it reads.** pdf.js returns positioned fragments, not rows, so `pdfLines`
+groups them by baseline and reads left to right. Every page of a CommBank
+statement carries a rotated print code down the left margin which otherwise
+lands in the middle of a row — items with a non-zero skew in their transform are
+dropped, which is what removes it.
+
+**Three traps in the format**, each one silent if you get it wrong:
+
+- dates carry no year (`11 Jun`), so the year comes from the statement period,
+  which for a December statement spans two;
+- credits use a **trailing** minus (`673.48-`). Miss it and every payment you
+  made is counted as a charge;
+- the foreign amount is a continuation line (`##0000 148010.00RUPIAH`) belonging
+  to the row above. Not every `##` line is one — `## USA MERCHANT` also appears.
+
+The last pages list regular payments as `Name | amount | date`, which is a
+reminder and not transactions. Parsing stops at that heading; the row pattern
+also requires the date at the *start*, so it is belt and braces.
+
+**It reconciles before it offers.** The statement prints its own arithmetic, so
+the import checks that the rows read reproduce it: opening + charges − payments
+= closing balance. That is the whole reason to trust a PDF parse. The result is
+shown on the import screen per statement, and says DOES NOT BALANCE in red
+rather than quietly loading a wrong year. Several months can be dropped in at
+once. Zero-dollar rows (waived fees, $0.00 international fees) are dropped
+*after* the check — 57 of 125 on the June–July statement, none of them worth a
+decision.
+
+**Foreign charges keep the bank's AUD figure.** CommBank has already converted,
+and that is the amount that actually left the account, so re-converting at an
+ECB rate would be both more work and less defensible. The original rides along
+in an "Original charge" column, deliberately named so the column mapper does not
+mistake it for a currency column and re-convert. The ECB path still applies to
+accounts genuinely *held* in foreign currency — Wise IDR/USD, the Indonesian
+bank.
+
+**The fixture is a real statement, so it is git-ignored** — this repo is public.
+`pdf.test.mjs` skips with instructions when it is absent; `test/fixtures/README.md`
+says what to put back and what it should produce. With it present the test runs
+the whole path, UI included, and checks 125 rows, the $59.70 Tokopedia refund
+landing as a credit rather than a charge, 56 foreign amounts, and that importing
+the same statement twice adds nothing.
+
+`tools/cba_card_pdf.py` does the same job from the command line, for a bulk
+convert without a browser.
+
+**To teach it another bank**, write a reader that takes the lines and returns
+`{acct, rows, rec}`, and add it to `STATEMENT_READERS` in `part_c2c.js`. The
+reconciliation block is the part worth copying: without a check against the
+statement's own totals, a PDF parse is a guess.
+
+---
+
 ## 23 September 2026 — The output sheet
 
 Daniel asked to see the output file with the existing figures in it before

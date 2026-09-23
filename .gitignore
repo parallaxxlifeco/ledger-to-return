@@ -11,3 +11,11 @@ node_modules/
 # Never commit anything holding transaction data or credentials
 *backup*.json
 ledger-to-return-data.json
+
+# Real bank statements. THIS REPOSITORY IS PUBLIC — never commit one.
+# test/fixtures/README.md says how to put one back locally.
+test/fixtures/*.pdf
+test/fixtures/*.csv
+
+# symlink made by build/make-test-pages.py so build/ can reach ../vendor
+build/vendor

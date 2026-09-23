@@ -43,3 +43,11 @@ window.claude={use:async(n)=>n==='db'?fakeDb:null};
 open(os.path.join(here, 'local-db.html'), 'w').write(
     '<!doctype html><html><head><meta charset="utf-8">' + DB_STUB + '</head><body>' + body + '</body></html>')
 print('wrote build/local-db.html')
+
+# The vendored PDF reader lives beside index.html, so a page served out of
+# build/ needs it reachable at the same relative path.
+vendor = os.path.join(root, 'vendor')
+link = os.path.join(here, 'vendor')
+if os.path.isdir(vendor) and not os.path.exists(link):
+    os.symlink(os.path.relpath(vendor, here), link)
+    print('linked build/vendor -> ../vendor')

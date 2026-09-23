@@ -357,11 +357,13 @@ tr.subtotal td:first-child{background:var(--raise)}
           <textarea id="impText" rows="7" placeholder="Paste straight from the CSV, or from a spreadsheet — headers and all."></textarea>
         </div>
         <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
-          <input type="file" id="impFile" accept=".csv,.txt,.tsv" style="display:none">
+          <input type="file" id="impFile" accept=".csv,.txt,.tsv,.pdf" multiple style="display:none">
           <button class="btn" id="btnFile">Choose a file…</button>
           <button class="btn pri" id="btnParse">Read the rows</button>
           <span class="hint" id="impStatus"></span>
         </div>
+        <p class="hint" style="margin-top:9px">CSV, or CommBank credit card statements as PDF — several months at once is fine. Each statement is checked against its own printed totals before anything is added.</p>
+        <div id="pdfNote" style="display:none;margin-top:12px"></div>
       </div>
     </div>
 
@@ -773,7 +775,7 @@ const SHEET_SEED=[
    {g:"PERSONAL", kind:"expense", lines:[
      ["Clothing"],["Gifts"],["Education"],["Savings"]]},
    {g:"MISC PAYMENTS", kind:"expense", lines:[
-     ["Debt Carry Over"]]},
+     ["Debt Carry Over"],["Other"]]},
  ]},
 ];
 const SHEET_NAME={gia:"GIA Finance Tracking",budget:"Budget Tracker"};
@@ -856,6 +858,166 @@ function trackGroups(){
     g.items.push(t);
   }
   return out;
+}
+
+/* ===================== PDF STATEMENTS ======================
+   Some banks will not give you a usable CSV. CommBank's card export is capped
+   at a row count, so a year of statements only arrives as twelve PDFs. These
+   carry a real text layer, so nothing here is guessed from pixels.
+
+   pdf.js is vendored beside the page rather than pulled from a CDN: the reader
+   then works offline, the hosted site loads no third-party script, and the
+   tests can run. Published as a Claude artifact there is no vendor folder, so
+   the import falls back to "convert to CSV first" rather than half-working. */
+const PDF_DIR="vendor/pdfjs/";
+let PDFLIB=null;
+async function pdfLib(){
+  if(PDFLIB) return PDFLIB;
+  const base=document.baseURI;
+  const lib=await import(new URL(PDF_DIR+"pdf.min.mjs",base).href);
+  lib.GlobalWorkerOptions.workerSrc=new URL(PDF_DIR+"pdf.worker.min.mjs",base).href;
+  PDFLIB=lib;
+  return lib;
+}
+
+/* Text, rebuilt into lines. pdf.js hands back positioned fragments, not rows,
+   so they are grouped by baseline and read left to right. */
+async function pdfLines(buf){
+  const lib=await pdfLib();
+  const doc=await lib.getDocument({data:buf,isEvalSupported:false}).promise;
+  const out=[];
+  for(let p=1;p<=doc.numPages;p++){
+    const page=await doc.getPage(p);
+    const content=await page.getTextContent();
+    const rows=new Map();
+    for(const it of content.items){
+      if(!it.str||!it.str.trim()) continue;
+      const tr=it.transform;
+      /* Every page carries a rotated print code down the left margin. Left in,
+         it lands in the middle of a row and breaks the match. Rotated text has
+         a non-zero skew, which is how it gets dropped. */
+      if(Math.abs(tr[1])>0.01||Math.abs(tr[2])>0.01) continue;
+      const y=Math.round(tr[5]*2)/2;
+      let best=null;
+      for(const k of rows.keys()) if(Math.abs(k-y)<=1.6){ best=k; break; }
+      if(best==null){ best=y; rows.set(best,[]); }
+      rows.get(best).push({x:tr[4],s:it.str});
+    }
+    const ys=[...rows.keys()].sort((a,b)=>b-a);          // top of page first
+    for(const y of ys){
+      const line=rows.get(y).sort((a,b)=>a.x-b.x).map(i=>i.s).join(" ")
+        .replace(/\s+/g," ").trim();
+      if(line) out.push(line);
+    }
+    page.cleanup();
+  }
+  await doc.destroy();
+  return out;
+}
+
+/* ---- CommBank credit card statement ---- */
+const CBA_MON={Jan:0,Feb:1,Mar:2,Apr:3,May:4,Jun:5,Jul:6,Aug:7,Sep:8,Oct:9,Nov:10,Dec:11};
+const CBA_CUR={"RUPIAH":"IDR","US DOLLAR":"USD","EURO":"EUR","NZ DOLLAR":"NZD",
+  "POUND STERLING":"GBP","SINGAPORE DOLLAR":"SGD","THAI BAHT":"THB","JAPANESE YEN":"JPY",
+  "HONG KONG DOLLAR":"HKD","CANADIAN DOLLAR":"CAD","SWISS FRANC":"CHF","UAE DIRHAM":"AED",
+  "MALAYSIAN RINGGIT":"MYR","INDIAN RUPEE":"INR","PHILIPPINE PESO":"PHP","VIETNAMESE DONG":"VND"};
+
+/* A charge line: "11 Jun  Crossfit Wanderlust Fi Badung  14.03". The amount is
+   whatever decimal ends the line; a credit carries a TRAILING minus. */
+const CBA_ROW=/^(\d{1,2}) (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) +(.+?) +([\d,]+\.\d{2})(-?)$/;
+/* The foreign amount sits on its own line and belongs to the row above it. */
+const CBA_FX=/^##\d+ +([\d,]+\.\d{2}) ?([A-Z][A-Z ]+?)$/;
+const CBA_PERIOD=/Statement Period +(\d{1,2}) (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) (\d{4}) *- *(\d{1,2}) (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) (\d{4})/;
+
+const num=s=>parseFloat(String(s).replace(/,/g,""));
+const iso=d=>d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+
+function readCbaCard(lines){
+  const all=lines.join("\n");
+  const per=CBA_PERIOD.exec(all);
+  if(!per) return null;                        // not a statement this can read
+  const start=new Date(+per[3],CBA_MON[per[2]],+per[1]);
+  const end  =new Date(+per[6],CBA_MON[per[5]],+per[4]);
+  const card=/(\d{4}) (\d{4}) (\d{4}) (\d{4})/.exec(all);
+  const acct="CommBank card "+(card?card[4]:"");
+
+  /* No year on a transaction date. Take the one that lands inside the period —
+     a December statement runs into January and needs both. */
+  const dateFor=(day,mon)=>{
+    for(const y of [start.getFullYear(),end.getFullYear()]){
+      const d=new Date(y,CBA_MON[mon],day);
+      if(d>=start&&d<=end) return d;
+    }
+    return new Date(start.getFullYear(),CBA_MON[mon],day);
+  };
+
+  const rows=[];
+  for(const line of lines){
+    /* The last pages list regular payments as "Name | amount | date". Those are
+       a reminder, not transactions, and must not be read as rows. */
+    if(/^Helping you identify your regular payments/.test(line)) break;
+    const m=CBA_ROW.exec(line);
+    if(m){
+      const d=dateFor(+m[1],m[2]);
+      const v=num(m[4]);
+      /* A charge costs money, so it is negative here; a payment or refund is
+         positive. The statement prints both unsigned. */
+      rows.push({date:iso(d),desc:m[3].trim(),aud:m[5]?v:-v,cur:"",orig:""});
+      continue;
+    }
+    const f=CBA_FX.exec(line);
+    if(f&&rows.length){
+      const name=f[2].trim();
+      rows[rows.length-1].cur=CBA_CUR[name]||name;
+      rows[rows.length-1].orig=num(f[1]);
+    }
+  }
+  if(!rows.length) return null;
+
+  /* The statement prints its own arithmetic. If the rows read here do not
+     reproduce it, something was missed or double counted, and the import says
+     so rather than quietly loading a wrong year. */
+  const grab=re=>{ const m=re.exec(all); return m?num(m[1]):null; };
+  const opening =grab(/Opening balance at [^$]*\$([\d,]+\.\d{2})/);
+  const charges =grab(/New transactions and charges +\$([\d,]+\.\d{2})/);
+  const payments=grab(/Payments\/refunds +-\$([\d,]+\.\d{2})/);
+  const closing =grab(/Closing balance at [^$]*\$([\d,]+\.\d{2})/);
+  const gotCh =Math.round(-rows.filter(r=>r.aud<0).reduce((s,r)=>s+r.aud,0)*100)/100;
+  const gotPay=Math.round( rows.filter(r=>r.aud>0).reduce((s,r)=>s+r.aud,0)*100)/100;
+  const near=(a,b)=>a!=null&&b!=null&&Math.abs(a-b)<0.005;
+  const rec={acct,period:iso(start)+" to "+iso(end),n:rows.length,
+             charges,gotCh,payments,gotPay,opening,closing,
+             ok:near(charges,gotCh)&&near(payments,gotPay)&&
+                near(closing,(opening||0)+gotCh-gotPay)};
+
+  /* Waived fees and $0.00 FX fees are most of the statement by row count and
+     none of it by value. Dropped after reconciling, so the sort queue is not
+     half noise. */
+  const kept=rows.filter(r=>Math.abs(r.aud)>=0.005);
+  rec.zeros=rows.length-kept.length;
+  return {acct,rows:kept,rec};
+}
+
+const STATEMENT_READERS=[{id:"cba-card",label:"CommBank credit card",read:readCbaCard}];
+
+async function readStatement(file){
+  const lines=await pdfLines(await file.arrayBuffer());
+  for(const r of STATEMENT_READERS){
+    const got=r.read(lines);
+    if(got) return {...got,reader:r};
+  }
+  return null;
+}
+
+/* The rows become the same delimited text a pasted CSV would be, so everything
+   downstream — column mapping, preview, duplicate check — is unchanged.
+   "Original charge" is deliberately named so the mapper ignores it: CommBank
+   has already converted, and that AUD figure is what left the account. */
+function statementCsv(rows){
+  const L=[["Date","Description","Amount (AUD)","Original charge"].map(csvq).join(",")];
+  for(const r of rows) L.push([r.date,r.desc,r.aud.toFixed(2),
+    r.cur?r.cur+" "+r.orig.toLocaleString("en-AU"):""].map(csvq).join(","));
+  return L.join("\n");
 }
 
 /* ========================== STATE ==========================
@@ -2048,7 +2210,7 @@ function renderSheetsReport(){
           <select id="gridYear" style="width:auto">${years.map(y=>`<option${y===year?" selected":""}>${y}</option>`).join("")}</select></div>
         <label class="hint" style="display:flex;align-items:center;gap:7px;padding-bottom:8px;cursor:pointer">
           <input type="checkbox" id="hideEmpty"${hideEmpty?" checked":""} style="width:auto"> Hide lines with nothing in them</label>
-        <button class="btn sm" id="dlActuals" style="margin-bottom:6px" title="Both sheets, one row per line \u2014 the file the tracking sheet is built from">Download both sheets</button>
+        <button class="btn sm" id="dlActuals" style="margin-bottom:6px" title="Both sheets, one row per line — the file the tracking sheet is built from">Download both sheets</button>
       </div>
     </div>
     ${unsorted||notax||norate||stale?`<div style="display:flex;flex-direction:column;gap:10px;margin-bottom:6px">
@@ -2356,13 +2518,83 @@ $$(".stage").forEach(b=>b.addEventListener("click",()=>go(b.dataset.pane)));
 $("#btnParse").addEventListener("click",doParse);
 $("#btnFile").addEventListener("click",()=>$("#impFile").click());
 $("#impFile").addEventListener("change",e=>{
-  const f=e.target.files[0]; if(!f) return;
-  if(!$("#impAcct").value.trim()) $("#impAcct").value=f.name.replace(/\.[^.]+$/,"").replace(/[_-]+/g," ").slice(0,40);
-  const r=new FileReader();
-  r.onload=()=>{ $("#impText").value=r.result; doParse(); };
-  r.readAsText(f);
-  e.target.value="";
+  const files=[...e.target.files]; e.target.value="";
+  if(!files.length) return;
+  if(files.some(f=>/\.pdf$/i.test(f.name))) takeStatements(files);
+  else{
+    const f=files[0];
+    if(!$("#impAcct").value.trim()) $("#impAcct").value=f.name.replace(/\.[^.]+$/,"").replace(/[_-]+/g," ").slice(0,40);
+    const r=new FileReader();
+    r.onload=()=>{ $("#impText").value=r.result; doParse(); };
+    r.readAsText(f);
+  }
 });
+
+/* Statements come a month at a time, so several can be dropped in at once.
+   They are read into one list, in date order, and handed to the same importer
+   a pasted CSV goes through. */
+async function takeStatements(files){
+  const pdfs=files.filter(f=>/\.pdf$/i.test(f.name));
+  const st=$("#impStatus");
+  st.textContent=`Reading ${pdfs.length} statement${pdfs.length===1?"":"s"}…`;
+  $("#pdfNote").style.display="none";
+  const all=[],reports=[],failed=[];
+  for(const f of pdfs){
+    try{
+      const got=await readStatement(f);
+      if(!got){ failed.push([f.name,"not a statement this can read yet"]); continue; }
+      all.push(...got.rows);
+      reports.push({file:f.name,...got.rec});
+    }catch(err){
+      failed.push([f.name,/import|fetch|module|Failed/i.test(String(err&&err.message))
+        ? "the PDF reader could not load here — open the hosted site, or convert this one to CSV"
+        : String(err&&err.message||err)]);
+    }
+  }
+  if(!all.length){
+    st.textContent="";
+    showStatementReport(reports,failed,0);
+    return;
+  }
+  all.sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:0);
+  const accts=[...new Set(reports.map(r=>r.acct))];
+  if(accts.length===1) $("#impAcct").value=accts[0];
+  $("#impCur").value="AUD";
+  $("#impText").value=statementCsv(all);
+  st.textContent="";
+  showStatementReport(reports,failed,all.length);
+  doParse();
+}
+
+/* What the statement says about itself, against what was read out of it. This
+   is the part worth looking at: a PDF parse you can check against the bank's
+   own arithmetic is trustworthy in a way a generic one is not. */
+function showStatementReport(reports,failed,n){
+  const box=$("#pdfNote");
+  const bad=reports.filter(r=>!r.ok);
+  const rows=reports.map(r=>`<tr>
+      <td>${esc(r.period)}</td>
+      <td class="r mono">${r.n}</td>
+      <td class="r mono">${r.charges==null?"—":fmtAUD(r.charges)}</td>
+      <td class="r mono">${r.payments==null?"—":fmtAUD(r.payments)}</td>
+      <td class="${r.ok?"":"r"}" style="color:${r.ok?"var(--income)":"var(--crit)"}">
+        ${r.ok?"balances":"DOES NOT BALANCE"}</td></tr>`).join("");
+  box.innerHTML=`
+    <div class="flagbox ${bad.length||failed.length?"crit":"ok"}"><div>
+      <div class="ft">${n} row${n===1?"":"s"} read from ${reports.length} statement${reports.length===1?"":"s"}</div>
+      <div class="fd">${bad.length
+        ? "The totals below do not match what the statement says. Do not add these — send the file over and I'll look at it."
+        : "Each one was checked against its own printed totals: opening + charges − payments = closing balance."}</div>
+    </div></div>
+    ${reports.length?`<div class="tablewrap" style="margin-top:10px"><table>
+      <thead><tr><th>Period</th><th class="r">Rows</th><th class="r">Charges</th><th class="r">Payments</th><th>Check</th></tr></thead>
+      <tbody>${rows}</tbody></table></div>`:""}
+    ${reports.some(r=>r.zeros)?`<p class="hint" style="margin-top:8px">${
+      reports.reduce((a,r)=>a+r.zeros,0)} zero-dollar rows (waived fees, $0.00 international fees) left out after the check.</p>`:""}
+    ${failed.length?`<p class="hint" style="margin-top:8px;color:var(--crit)">${
+      failed.map(([f,why])=>esc(f)+" — "+esc(why)).join("<br>")}</p>`:""}`;
+  box.style.display="";
+}
 $("#btnCancelMap").addEventListener("click",()=>{$("#mapCard").style.display="none";PARSED=null;});
 $("#btnAdd").addEventListener("click",addParsed);
 ["#mapDateFmt","#mapDec","#mapSign","#impCur","#impAcct"].forEach(s=>
