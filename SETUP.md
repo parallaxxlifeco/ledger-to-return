@@ -182,3 +182,51 @@ git remote set-url origin https://github.com/parallaxxlifeco/event-dashboard.git
 
 and authenticate with `gh auth login` or the macOS keychain instead. Unrelated to
 this project, but worth doing today.
+
+---
+
+## What is public, and what is not
+
+**The repository is public.** GitHub Pages is only free on public repos, so the
+code — and every commit ever made to it — can be read by anyone who finds it.
+
+**Your money is not in it.** Nothing about your finances has ever been
+committed: the only data file in the whole history is `build/rates.json`, the
+ECB reference rates, which is public information. Statements, exports and the
+app's save file are in `.gitignore`.
+
+**Where your data actually lives:**
+
+| | |
+|---|---|
+| Transactions you sort | your browser, and `ledger-to-return-data.json` in your Drive |
+| That Drive file | private — owner only, not shared with anyone |
+| The output sheet | private — owner only |
+| Statements you drop into Import | read in the browser, never uploaded anywhere |
+
+The app has no server. A statement you import is parsed by JavaScript running on
+your own machine; it never leaves it except into your own Drive file.
+
+**The second lock.** `.gitignore` only helps for paths it knows about, and does
+nothing against `git add -f`. So `.githooks/pre-commit` refuses to commit any
+`.pdf`, `.csv`, `.tsv`, `.ofx`, `.qif`, `.xls`, `.xlsx` or `.json` (bar the
+rates table), and refuses content shaped like a card number or an app backup in
+case one is pasted into a note. On a fresh clone, turn it on with:
+
+```
+git config core.hooksPath .githooks
+```
+
+**If you would rather the repo were private**, that needs GitHub Pro (about
+US$4/month) — Pages is public-repo-only on the free plan. Worth knowing before
+you decide: making the repo private hides the *source*, but the published site
+stays reachable by anyone with the URL either way. GitHub only offers access
+control on Pages at the Enterprise tier. So the question is whether you want the
+code private, not whether it protects your data — that is already handled above.
+
+The alternative, if you want no public surface at all, is to stop using Pages
+and open the app from `ledger-to-return.html` on your own machine. The cost is
+Drive saving: the OAuth client only accepts `https://parallaxxlifeco.github.io`
+and `http://localhost:8899`, so you would need to serve it locally
+(`python3 -m http.server 8899`) rather than double-clicking the file, and add
+that origin if it is not already there.
