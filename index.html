@@ -885,14 +885,18 @@ function trackGroups(){
    pdf.js is vendored beside the page rather than pulled from a CDN: the reader
    then works offline, the hosted site loads no third-party script, and the
    tests can run. Published as a Claude artifact there is no vendor folder, so
-   the import falls back to "convert to CSV first" rather than half-working. */
+   the import falls back to "convert to CSV first" rather than half-working.
+
+   The files keep a .js extension although they are ES modules: .mjs is served
+   as a download by some static hosts, which breaks the import, and .js is
+   served as JavaScript everywhere. */
 const PDF_DIR="vendor/pdfjs/";
 let PDFLIB=null;
 async function pdfLib(){
   if(PDFLIB) return PDFLIB;
   const base=document.baseURI;
-  const lib=await import(new URL(PDF_DIR+"pdf.min.mjs",base).href);
-  lib.GlobalWorkerOptions.workerSrc=new URL(PDF_DIR+"pdf.worker.min.mjs",base).href;
+  const lib=await import(new URL(PDF_DIR+"pdf.min.js",base).href);
+  lib.GlobalWorkerOptions.workerSrc=new URL(PDF_DIR+"pdf.worker.min.js",base).href;
   PDFLIB=lib;
   return lib;
 }

@@ -61,6 +61,11 @@ the whole path, UI included, and checks 125 rows, the $59.70 Tokopedia refund
 landing as a credit rather than a charge, 56 foreign amounts, and that importing
 the same statement twice adds nothing.
 
+The vendored files keep a `.js` extension although they are ES modules. Some
+static hosts serve `.mjs` as a download rather than as JavaScript, which breaks
+`import()` — and that is not something you can test from anywhere but the live
+site, so it is avoided rather than discovered.
+
 `tools/cba_card_pdf.py` does the same job from the command line, for a bulk
 convert without a browser.
 
