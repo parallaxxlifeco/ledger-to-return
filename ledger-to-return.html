@@ -1410,12 +1410,20 @@ function addParsed(){
     const rule=bk.rules[mk];
     const rec={...t,id,mk,cat:null,auto:false};
     if(isTrack()){ rec.kind=null; rec.line=null; rec.tax=null; }
-    if(rule){
+    /* A rule only speaks for money going the same way. An incoming refund from
+       a merchant you normally pay arrives unsorted, which is correct: it is a
+       different transaction and wants its own answer. */
+    const wrongWay=rule&&ruleDir(rule)&&ruleDir(rule)!==(rec.amt>=0?"income":"expense");
+    if(rule&&!wrongWay){
       if(isTrack()&&rule.k){
         rec.kind=rule.k;
         rec.line=rule.l&&TRK[rule.l]?rule.l:null;
         rec.tax=rule.t&&CAT[rule.t]?rule.t:(rule.k==="personal"?"x_personal":null);
-        if(rec.kind==="business"&&!rec.line&&rec.tax&&S.lineFor[rec.tax]) rec.line=S.lineFor[rec.tax];
+        /* the learned line only if it runs the same way as the category */
+        if(rec.kind==="business"&&!rec.line&&rec.tax&&CAT[rec.tax]){
+          const ln=S.lineFor[rec.tax];
+          if(ln&&TRK[ln]&&TRK[ln].kind===CAT[rec.tax].kind) rec.line=ln;
+        }
         if(settled(rec)){ rec.auto=true; auto++; }
       }else if(!isTrack()&&rule.t&&CAT[rule.t]){
         rec.cat=rule.t; rec.auto=true; auto++;
@@ -1759,21 +1767,42 @@ function renderProgress(){
 function currentTx(){ return B().tx.find(t=>t.id===curId)||null; }
 
 /* ---------- what the dropdown offers, given the answer so far ---------- */
+/* Which way the money went. The category already chosen is the better answer
+   than the sign, because that is the decision that was actually made; the sign
+   is what we have before one is. */
+function dirOf(t){
+  if(t.tax&&CAT[t.tax]&&CAT[t.tax].kind!=="exclude") return CAT[t.tax].kind;
+  return t.amt>=0?"income":"expense";
+}
 function pickPool(t){
-  if(!isTrack()) return CATLIST.map(c=>({key:c.key,label:c.label,g:c.group,note:c.ato,hay:c.label+" "+c.group+" "+c.ato}));
+  /* Money that went out can't be ticket sales. Offering it is how a list gets
+     long enough to be slow and wrong at the same time. The excluded categories
+     stay in both directions — drawings and tax go either way. */
+  if(!isTrack()){
+    const want=dirOf(t);
+    return CATLIST.filter(c=>c.kind===want||c.kind==="exclude")
+      .map(c=>({key:c.key,label:c.label,g:c.group,note:c.ato,hay:c.label+" "+c.group+" "+c.ato}));
+  }
   if(pickMode==="line"){
-    return linesFor("business").map(l=>({key:l.key,label:l.label,g:l.group,note:SHEET_NAME[l.sheet],
-      hay:l.label+" "+l.group+" "+SHEET_NAME[l.sheet]}));
+    const want=dirOf(t);
+    return linesFor("business").filter(l=>l.kind===want)
+      .map(l=>({key:l.key,label:l.label,g:l.group,note:SHEET_NAME[l.sheet],
+        hay:l.label+" "+l.group+" "+SHEET_NAME[l.sheet]}));
   }
   if(t.kind==="personal"){
-    return linesFor("personal").map(l=>({key:l.key,label:l.label,g:l.group,note:"",hay:l.label+" "+l.group}));
+    const want=dirOf(t);
+    const pool=linesFor("personal");
+    const same=pool.filter(l=>l.kind===want);
+    /* His personal blocks are all expense lines, so a refund would otherwise
+       find nothing. Better the whole list than an empty one. */
+    return (same.length?same:pool).map(l=>({key:l.key,label:l.label,g:l.group,note:"",hay:l.label+" "+l.group}));
   }
   if(t.kind==="exclude"){
     return EXCLUDE_CATS.filter(k=>CAT[k]).map(k=>({key:k,label:CAT[k].label,g:CAT[k].group,note:"",hay:CAT[k].label}));
   }
   if(t.kind==="transfer") return [];
   if(t.kind==="business"){
-    const want=t.amt>=0?"income":"expense";
+    const want=dirOf(t);
     return CATLIST.filter(c=>c.kind===want).map(c=>({key:c.key,label:c.label,g:c.group,note:c.ato,
       hay:c.label+" "+c.group+" "+c.ato}));
   }
@@ -1812,8 +1841,8 @@ function pickHits(t){
   return pool.filter(o=>{const h=o.hay.toLowerCase();return toks.every(x=>h.includes(x));});
 }
 function pickPrompt(t){
-  if(!isTrack()) return "Which tax category?";
-  if(pickMode==="line") return "Which line in your sheets?";
+  if(!isTrack()) return t.amt>=0?"Which kind of income?":"Which expense category?";
+  if(pickMode==="line") return dirOf(t)==="income"?"Which income line in your sheets?":"Which expense line in your sheets?";
   if(t.kind==="personal") return "Which line in your Budget Tracker?";
   if(t.kind==="exclude")  return "What is it?";
   return t.amt>=0?"Which kind of income?":"Which expense category, for the return?";
@@ -2009,7 +2038,9 @@ function choose(key){
     if(!CAT[key]) return;
     t.tax=key; t.auto=false;
     const known=S.lineFor[key];
-    if(known&&TRK[known]){
+    /* A learned line only applies if it runs the same way as the category. An
+       expense never lands on an income line, however it was once paired. */
+    if(known&&TRK[known]&&TRK[known].kind===CAT[key].kind){
       t.line=known;
       applyRule(t,{k:"business",l:known,t:key});
       advance(nextId);
@@ -2020,19 +2051,32 @@ function choose(key){
   }
 }
 /* Save the rule if asked, and carry it to everything still unsorted that matches. */
+/* Which way a rule's answer runs, so it is only handed to rows going the same
+   way. A refund from a merchant you usually pay is not the same transaction. */
+function ruleDir(rule){
+  if(rule.t&&CAT[rule.t]&&CAT[rule.t].kind!=="exclude") return CAT[rule.t].kind;
+  if(rule.l&&TRK[rule.l]) return TRK[rule.l].kind;
+  return null;                                  // transfers and the excluded go either way
+}
 function applyRule(t,rule){
-  let extra=0;
+  let extra=0,skipped=0;
   if(ruleOn&&t.mk){
     B().rules[t.mk]=rule;
+    const dir=ruleDir(rule);
     for(const x of B().tx){
       if(x.id===t.id||x.mk!==t.mk||settled(x)) continue;
+      /* Leave the opposite direction alone rather than filling it in wrong —
+         it comes back as something to answer, which is the honest outcome. */
+      if(dir&&(x.amt>=0?"income":"expense")!==dir){ skipped++; continue; }
       if(isTrack()){ x.kind=rule.k; x.line=rule.l; x.tax=rule.t; }
       else x.cat=rule.t;
       x.auto=true; extra++;
     }
   }
   markDirty();
-  if(extra) toast(`${extra} more like “${t.mk}” done too`);
+  if(extra||skipped) toast(
+    (extra?`${extra} more like “${t.mk}” done too`:`Rule saved`)+
+    (skipped?` · ${skipped} left for you — ${skipped===1?"it goes":"they go"} the other way`:""));
 }
 function advance(nextId){
   curId=nextId||null;

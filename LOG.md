@@ -4,6 +4,52 @@ What was built, when, and what you'd need to know to change it. Newest first.
 
 ---
 
+## 23 September 2026 — Money out is not ticket sales
+
+Daniel: "a business expense shouldn't show ticket sales as an option to log
+against." He was right, though not where he thought.
+
+The **ATO category** list was already filtered by direction — `pickPool` has
+done that since the sort screen was rebuilt. The **sheet line** list that
+follows it was not. So you picked an expense category, and were then offered
+every business line on both sheets: Tickets, Speakers, Partners and Reconnected
+Man sitting among the expense lines. 64 options where 42 were possible.
+
+`dirOf(t)` now decides which way the money went, and every list is filtered by
+it. It reads the chosen category first and falls back to the sign, because once
+a category is picked that is the decision actually made — the sign is only what
+we have before one exists.
+
+| list | was | now |
+|---|---|---|
+| business expense categories | filtered | filtered (36) |
+| sheet lines after an expense | **all 64** | **42** |
+| sheet lines after income | **all 64** | **22** |
+| tax-book categories | **unfiltered** | by direction, plus the excluded ones |
+
+The excluded categories — drawings, tax, GST, loan principal — stay available
+in both directions, because they genuinely go either way.
+
+**Two quieter holes closed at the same time**, both of which could have put an
+expense on an income line without anyone picking it:
+
+- the learned category→line pairing (`S.lineFor`) is ignored when the line runs
+  the opposite way to the category, rather than filled in;
+- a rule now has a direction of its own (`ruleDir`), and skips rows going the
+  other way instead of coding them. A refund from a merchant you normally pay
+  arrives **unsorted**, which is the honest outcome — it is a different
+  transaction and wants its own answer. The toast says how many were left.
+
+The personal list is the one exception: his personal blocks are all expense
+lines, so a personal refund would filter down to nothing. Better the whole list
+than an empty one, so it falls back.
+
+`direction.test.mjs` covers the lot, including the learned pairing deliberately
+set the wrong way round and a refund that must not be swept up by its merchant's
+rule.
+
+---
+
 ## 23 September 2026 — Rules stop being automatic
 
 Daniel, part way through his first real sort: "Gojek is marked as a rule - but I
