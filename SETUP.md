@@ -57,7 +57,7 @@ can rebuild or change it later.
 | Google account | parallaxxlifeco@gmail.com |
 | Cloud project | `ledger-to-return` |
 | API enabled | Google Drive API |
-| Consent screen | External, in Testing, `parallaxxlifeco@gmail.com` as the sole test user |
+| Consent screen | External, in Testing — **the test-user list must contain `parallaxxlifeco@gmail.com`** (see the warning below) |
 | OAuth client | "Ledger to Return web", Web application |
 | Authorised origins | `https://parallaxxlifeco.github.io` and `http://localhost:8899` |
 | Client ID | `989893722816-oc12c1mvous3uvql355k81qn203lfsid.apps.googleusercontent.com` |
@@ -66,6 +66,26 @@ The client ID is baked into the page, so any browser you open it in already has
 it. It is public by design — it identifies the app, and Google only honours it
 from the two origins above. The client secret Google also issued is unused: the
 browser token flow doesn't take one, and nothing here stores it.
+
+> **If Google says “Access blocked … has not completed the Google verification
+> process” (Error 403: access_denied)**, the consent screen is in Testing and
+> your account is not on the test-user list. On 23 September 2026 the list was
+> empty — it was never saved when the project was first set up, despite what
+> this file used to claim. Fix it at
+> [Google Auth Platform → Audience](https://console.cloud.google.com/auth/audience?project=ledger-to-return):
+> **Test users → Add users → `parallaxxlifeco@gmail.com` → Save**.
+>
+> Two things that trip this up. The Cloud console opens with whichever Google
+> account the browser defaults to, and this project lives under
+> parallaxxlifeco@gmail.com — if the page says you need additional access,
+> you are signed in as the wrong account; switch it with the avatar, top right.
+> And test users don't survive being assumed: check the counter on that page
+> reads 1 test user, not 0.
+>
+> The alternative is **Publish app** on the same page, which moves it out of
+> Testing for good. `drive.file` is a non-sensitive scope, so Google does not
+> require the verification review to publish. The button is greyed out until
+> the Branding page is filled in.
 
 To connect: open the app → **Import** → *Where your work is saved* → **Connect
 Google Drive** → choose the account → **Allow**. Google will warn that the app
