@@ -300,8 +300,14 @@ em.chip-none{background:var(--warnsoft);color:var(--warn);font-style:normal;font
 .settledrow{display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--surface2);border-radius:7px;padding:9px 12px}
 .settledrow b{font-size:13px}
 .rulebox{
-  display:flex;align-items:flex-start;gap:9px;padding:9px 11px;border:1px dashed var(--line);
-  border-radius:7px;font-size:12px;color:var(--ink3);cursor:pointer;line-height:1.45;
+  display:flex;align-items:center;gap:9px;padding:7px 11px;border:1px dashed var(--line);
+  border-radius:7px;font-size:12px;color:var(--ink2);cursor:pointer;line-height:1.4;
+  margin-top:-2px;
+}
+.rulebox kbd{
+  font-family:"IBM Plex Mono",monospace;font-size:9.5px;min-width:15px;height:15px;
+  display:inline-grid;place-items:center;border:1px solid var(--line);border-radius:3px;
+  color:var(--ink2);background:var(--surface);vertical-align:middle;
 }
 .rulebox.on{border-color:var(--accentline);background:var(--accentsoft);color:var(--ink2)}
 .rulebox input{width:auto;margin-top:2px;flex:none}
@@ -1961,6 +1967,16 @@ function activeCard(t){
       `<button class="kindbtn${t.kind===k.k?" on":""}" data-kind="${k.k}">
          <b>${k.label}<kbd>${k.key}</kbd></b><span>${k.hint}</span>
        </button>`).join("")}</div>`;
+    /* Directly under the four answers, not below the list. It is a decision
+       about the answer you are making, and at the bottom of forty options it
+       was out of sight at the moment it mattered. */
+    if(t.kind&&(picking||needLine)&&t.mk){
+      body+=`<label class="rulebox${ruleOn?" on":""}">
+        <input type="checkbox" id="ruleChk"${ruleOn?" checked":""}>
+        <span><b>Make a rule</b> <kbd>r</kbd> — every “${esc(t.mk)}” from now on${
+          sib?`, and ${sib} already loaded`:""}. Leave it off for a merchant that means different things on different days.</span>
+      </label>`;
+    }
   }
 
   if(picking||needLine){
@@ -1979,14 +1995,6 @@ function activeCard(t){
         S.lineFor[t.tax]===t.line?` · learned from the first ${esc(CAT[t.tax].label)}`:""}</span>
       <button class="btn sm" data-relearn="1">Change</button>
     </div>`;
-  }
-
-  if(isTrack()&&t.kind&&(picking||needLine)&&t.mk){
-    body+=`<label class="rulebox${ruleOn?" on":""}">
-      <input type="checkbox" id="ruleChk"${ruleOn?" checked":""}>
-      <span><b>Make a rule</b> <kbd>r</kbd> — anything matching “${esc(t.mk)}” gets this answer from now on${
-        sib?`, including ${sib} already loaded`:""}. Leave it off for a merchant that means different things on different days.</span>
-    </label>`;
   }
 
   let note="";

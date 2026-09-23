@@ -45,6 +45,13 @@ old-shape rule pointed at `budget:transformations:adobe`. The app handled it
 correctly — no line, row unsettled — but the test then read `.label` off
 nothing. Repointed at Regular Subcriptions, which is where those lines folded.
 
+**And the rule checkbox moved up**, to sit directly under the four answer
+buttons instead of below the list. It is a decision about the answer being made,
+and at the bottom of forty options it was out of sight at the moment it
+mattered — which is part of how the Gojek rule got made without being noticed.
+`rules.test.mjs` now asserts its position, because a layout that only reads
+right by accident drifts back.
+
 ---
 
 ## 23 September 2026 — Lift the row being answered

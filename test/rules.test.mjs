@@ -110,6 +110,22 @@ const panel = await p.evaluate(() => ({
   chip: document.querySelector('#c-rules')?.textContent,
 }));
 check('one row per rule', panel.rows === 1, `${panel.rows}`);
+
+/* It is a decision about the answer being made, so it belongs beside the
+   answer — not below forty options where it cannot be seen. */
+const place = await p.evaluate(() => {
+  curId = 'o1'; setKind('business'); renderList();
+  const card = document.querySelector('.txcard.cur');
+  const box = card.querySelector('.rulebox'), pick = card.querySelector('.pickbox');
+  const kinds = card.querySelector('.kindrow');
+  return {
+    order: [...card.children].map(c => c.className).join(' > '),
+    underTheButtons: box && kinds && box.getBoundingClientRect().top > kinds.getBoundingClientRect().top,
+    aboveTheList: box && pick && box.getBoundingClientRect().top < pick.getBoundingClientRect().top,
+  };
+});
+check('the rule box sits under the four answers', place.underTheButtons, place.order);
+check('and above the list, not below it', place.aboveTheList);
 check('the chip counts them', panel.chip === '1', panel.chip);
 check('the row says what it fills and how much it has touched', /Personal/.test(panel.text) && /filled in/.test(panel.text), panel.text);
 
