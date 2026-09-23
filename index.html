@@ -1987,6 +1987,27 @@ function gridCsv(sheetId,year){
   return L.join("\n");
 }
 
+/* Both sheets in one file, one row per line, in the order the sheets run.
+   This is the shape of the Google Sheet the app keeps: Key comes first so the
+   workbooks can VLOOKUP against it over IMPORTRANGE, and "Rolls into" says out
+   loud where a GIA line also posts in the Budget Tracker. */
+function actualsCsv(year){
+  const got={};
+  for(const sh of SHEET_SEED){
+    const d=gridData(sh.id,year);
+    for(const g of d.groups) for(const it of g.items) got[it.line.key]=it.months;
+  }
+  const L=[["Key","Sheet","Block","Type","Line","Scope","Rolls into",...MONTHS,"Year"].map(csvq).join(",")];
+  for(const l of TRACKS){
+    const m=got[l.key]||Array(12).fill(0);
+    const roll=rollTarget(l.key);
+    L.push([l.key,SHEET_NAME[l.sheet],l.group,l.kind,l.label,l.scope,
+      roll?lineWhere(roll)+" \u00b7 "+lineLabel(roll):"",
+      ...m.map(v=>v.toFixed(2)),m.reduce((a,b)=>a+b,0).toFixed(2)].map(csvq).join(","));
+  }
+  return L.join("\n");
+}
+
 function catTable(list,sign){
   const tot=list.reduce((s,b)=>s+Math.abs(b.aud),0);
   const body=list.sort((a,b)=>Math.abs(b.aud)-Math.abs(a.aud)).map(b=>`<tr>
@@ -2044,6 +2065,7 @@ function renderSheetsReport(){
           <select id="gridYear" style="width:auto">${years.map(y=>`<option${y===year?" selected":""}>${y}</option>`).join("")}</select></div>
         <label class="hint" style="display:flex;align-items:center;gap:7px;padding-bottom:8px;cursor:pointer">
           <input type="checkbox" id="hideEmpty"${hideEmpty?" checked":""} style="width:auto"> Hide lines with nothing in them</label>
+        <button class="btn sm" id="dlActuals" style="margin-bottom:6px" title="Both sheets, one row per line \u2014 the file the tracking sheet is built from">Download both sheets</button>
       </div>
     </div>
     ${unsorted||notax||norate||stale?`<div style="display:flex;flex-direction:column;gap:10px;margin-bottom:6px">
@@ -2057,6 +2079,7 @@ function renderSheetsReport(){
     <div id="copyPanel" class="noprint"></div>`;
   $("#gridYear").addEventListener("change",e=>{S.gridYear=+e.target.value;markDirty();renderReport();});
   $("#hideEmpty").addEventListener("change",e=>{hideEmpty=e.target.checked;renderReport();});
+  $("#dlActuals").addEventListener("click",()=>download(`monthly-actuals-${year}.csv`,actualsCsv(year)));
   $$("#reportInner [data-csv]").forEach(b=>b.addEventListener("click",()=>
     download(`${b.dataset.csv}-actuals-${year}.csv`,gridCsv(b.dataset.csv,year))));
   $$("#reportInner .monthbtn").forEach(b=>b.addEventListener("click",()=>

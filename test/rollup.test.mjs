@@ -100,5 +100,19 @@ console.log('  (his May total was 3371.10 including 1154.89 of Budget-Tracker-on
 console.log(`   3371.10 - 1154.89 = ${(3371.10 - 1154.89).toFixed(2)})`);
 
 console.log(bad ? `\n${bad} FIGURE(S) WRONG` : '\nevery figure matches his sheet');
+
+/* The combined export is the file the Google Sheet is built from: every line
+   from both sheets, once each, whether or not anything landed on it. */
+const csv = await p.evaluate(() => actualsCsv(2026));
+const rows = csv.trim().split('\n');
+const nLines = await p.evaluate(() => TRACKS.length);
+const head = 'Key,Sheet,Block,Type,Line,Scope,Rolls into,Jan,Feb,Mar,Apr,May,Jun,Jul,Aug,Sep,Oct,Nov,Dec,Year';
+console.log('\nCOMBINED EXPORT:');
+console.log(`  ${rows[0] === head ? 'OK  ' : 'BAD '} header`);
+console.log(`  ${rows.length === nLines + 1 ? 'OK  ' : 'BAD '} ${rows.length - 1} rows for ${nLines} lines`);
+const keys = new Set(rows.slice(1).map(r => r.split(',')[0]));
+console.log(`  ${keys.size === nLines ? 'OK  ' : 'BAD '} every key distinct`);
+const venue = rows.find(r => r.startsWith('gia:give-it-all:expense:venue,'));
+console.log('  VENUE row:', venue);
 console.log('PAGE ERRORS:', errs.length ? errs : 'none');
 await b.close();

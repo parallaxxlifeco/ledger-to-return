@@ -4,6 +4,45 @@ What was built, when, and what you'd need to know to change it. Newest first.
 
 ---
 
+## 23 September 2026 — The output sheet
+
+Daniel asked to see the output file with the existing figures in it before
+feeding it anything new. So: **Ledger to Return — Monthly Actuals 2026** now
+sits in his Drive, built from the 2026 actuals already in both workbooks.
+
+The shape is one row per tracker line — all 83, empty ones included, in sheet
+order — and the columns are:
+
+    Key, Sheet, Block, Type, Line, Scope, Rolls into, Jan..Dec, Year
+
+`Key` is first on purpose: `gia:give-it-all:expense:venue` is stable, so the two
+workbooks can `VLOOKUP` against it over `IMPORTRANGE` without depending on row
+positions, which move. `Rolls into` names the Budget Tracker line a GIA line
+also posts to, so the double-posting is visible rather than implied.
+
+The app regenerates exactly this file: **Report → Sheets → Download both
+sheets**, which is `actualsCsv(year)` in `part_c5.js`. It reuses `gridData` per
+sheet and then walks `TRACKS`, so a line with nothing against it still gets a
+row — the sheet keeps its shape year to year. `rollup.test.mjs` asserts the
+header, that there is one row per line, and that every key is distinct.
+
+Two things worth knowing about the numbers:
+
+- The GIA sheet carries December figures on VENUE, EDITING, ADMIN / ASSISTANT
+  and LOGISTICS (1,303.11 in total) with nothing in July–November. They really
+  are in the DEC ACT column of his sheet — checked against the live file, not
+  assumed. April is the other way round: the Budget Tracker has GIA expense
+  2,215.23 but the GIA sheet's April ACT cells are empty. Both are his data
+  disagreeing with itself, left as found.
+- Content can't be written back to a Google Sheet through the Drive tools here
+  — only metadata. Refreshing the sheet means File → Import → Replace with the
+  downloaded CSV, or the Sheets API from the app once it's enabled in the
+  `ledger-to-return` Cloud project.
+
+Sheet: https://docs.google.com/spreadsheets/d/193Q5cH5Y6lfxnVgWiFay5cUVBJSlznj5LTCqcmhNIEw
+
+---
+
 ## 23 September 2026 — Both sheets from one pass
 
 Daniel: "the GIA sheet and the personal finances needs to happen at the same
