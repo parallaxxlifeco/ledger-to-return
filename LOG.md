@@ -4,6 +4,33 @@ What was built, when, and what you'd need to know to change it. Newest first.
 
 ---
 
+## 23 September 2026 — Transfers in one press
+
+Wise to CommBank, an account to the Mastercard: common, meaningless, and it was
+taking two steps. **Transfer** is now its own button and finishes the row on the
+spot — no dropdown, since there is nothing else to say about it. **Other** holds
+what is left of the non-business events (drawings, tax, GST, loan principal,
+capital in).
+
+Marked transfers drop out of *To sort*, *By rule* and *Sorted* so the working list
+is only money that matters. They live behind a **Transfers** filter, show under
+**All**, and stay in the transaction CSV — the trail survives even though nothing
+is tracked.
+
+With the rule box ticked, one press clears every lookalike in the statement and
+every one that arrives next month.
+
+`kind` now has four values: `personal | business | transfer | exclude`. A transfer
+is settled the moment it is chosen (`settled()` returns true with no line and no
+category to pick). Rows stored earlier as `exclude` with `x_transfer` migrate to
+`transfer` in `normTx`, and rules the same way in `normRule`.
+
+Considered and rejected: matching opposite amounts across accounts to spot
+transfer pairs automatically. Two genuine transactions that happen to offset
+would be wrongly marked, and the button is fast enough that the risk buys little.
+
+---
+
 ## 23 September 2026 — Personal / Business sorting
 
 **The change.** Sorting no longer opens with 82 tracker lines. Each transaction
@@ -15,6 +42,8 @@ dropdown that follows is only the list that answer needs.
 | Personal | the 18 personal lines from Budget Tracker (LIVING, SELF-CARE, LIFESTYLE, PERSONAL, MISC PAYMENTS) | sheet line; tax category is fixed at Personal spending and never reaches the return |
 | Business | ATO categories, filtered to income or expense by which way the money went | tax category, then the sheet line — asked once per category, remembered after |
 | Neither | transfers, drawings, tax and GST payments, loan principal | tax category only; feeds no sheet |
+
+*(Neither was split into Transfer and Other later the same day — see above.)*
 
 **Rules are now opt-in.** The *Make a rule* box on each card names the pattern it
 will match and says how many loaded rows it will also answer. Ticked by default,

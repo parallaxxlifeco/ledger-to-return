@@ -49,9 +49,9 @@ at the end of it.
 
 ## Sorting: one question, then a short list
 
-Every transaction asks the same first question — **Personal**, **Business** or
-**Neither** — and only then offers a dropdown, which is why the dropdown stays
-short.
+Every transaction asks the same first question — **Personal**, **Business**,
+**Transfer** or **Other** — and only then offers a dropdown, which is why the
+dropdown stays short.
 
 **Personal** offers the 18 lines from your Budget Tracker's LIVING, SELF-CARE,
 LIFESTYLE, PERSONAL and MISC PAYMENTS blocks. That is the whole answer: personal
@@ -62,9 +62,16 @@ the money went. The first time you use a category it asks which line in your
 sheets it lands on, and remembers — every later transaction in that category
 fills the line by itself. Reopen one and hit **Change** to point it somewhere else.
 
-**Neither** covers transfers between your own accounts, drawings, tax and GST
-payments, loan principal. These count for nothing in either output, which is the
-point — a transfer filed as personal spending would inflate your living costs.
+**Transfer** is one press and done — no dropdown. Wise to CommBank, an account to
+the Mastercard: your own money moving, nothing to record. Marked transfers drop
+out of *To sort*, *By rule* and *Sorted*, so the working list holds only money
+that matters; they live behind the **Transfers** filter, appear under **All**, and
+stay in the full CSV so a balance can still be reconciled.
+
+**Other** covers the rest of the non-business money events — drawings, income tax
+and GST payments, loan principal, capital in. They count for nothing in either
+output, which is the point: a tax instalment filed as personal spending would
+inflate your living costs.
 
 ### Rules
 
@@ -79,8 +86,9 @@ Descriptions collapse to a key with the digits stripped, so `INVOICE 4501` and
 
 ### Keyboard
 
-`P` `B` `N` answer · type to narrow · `Enter` takes the top match · `1`–`9` take
-one directly · `↑` `↓` move between rows · `R` toggles the rule box · `Backspace`
+`P` personal · `B` business · `T` transfer, which finishes the row on its own ·
+`O` other · then type to narrow, `Enter` takes the top match, `1`–`9` take one
+directly · `↑` `↓` move between rows · `R` toggles the rule box · `Backspace`
 clears a row.
 
 ## Import

@@ -159,15 +159,16 @@ tbody tr:last-child td{border-bottom:0}
 
 /* ---------- sort workspace ---------- */
 .sortpane{max-width:920px;margin:0 auto;padding:0 20px 90px;display:flex;flex-direction:column;min-height:calc(100vh - 56px)}
-.filters{
-  display:flex;align-items:center;gap:8px;padding:14px 0 10px;flex-wrap:wrap;
-  position:sticky;top:56px;background:var(--bg);z-index:20;
+.stickyhead{
+  position:sticky;top:56px;z-index:20;background:var(--bg);
+  padding:14px 0 10px;border-bottom:1px solid var(--linesoft);margin-bottom:12px;
 }
+.filters{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .chipset{display:flex;gap:4px;background:var(--surface2);padding:3px;border-radius:6px}
 .chip{border:0;background:transparent;padding:4px 10px;border-radius:4px;font-size:12px;cursor:pointer;color:var(--ink2);white-space:nowrap}
 .chip[aria-pressed="true"]{background:var(--surface);color:var(--ink);font-weight:600;box-shadow:0 1px 2px rgba(0,0,0,.08)}
 .chip b{font-family:"IBM Plex Mono",monospace;font-size:10.5px;opacity:.65;margin-left:4px;font-weight:500}
-.sorthint{margin:0 0 12px;font-size:11.5px}
+.sorthint{margin:9px 0 0;font-size:11.5px}
 .rows{display:flex;flex-direction:column;gap:6px}
 
 .txcard{
@@ -200,6 +201,7 @@ tbody tr:last-child td{border-bottom:0}
 em.chip-kind.k-personal{background:var(--warnsoft);color:var(--warn)}
 em.chip-kind.k-business{background:var(--accentsoft);color:var(--accent)}
 em.chip-kind.k-exclude{background:transparent;color:var(--ink3);border:1px dashed var(--line)}
+em.chip-kind.k-transfer{background:transparent;color:var(--ink3);border:1px dashed var(--line)}
 em.chip-cat{background:var(--surface2);color:var(--ink2)}
 em.chip-cat.k-income{background:var(--incomesoft);color:var(--income)}
 em.chip-cat.k-exclude{background:transparent;color:var(--ink3);border:1px dashed var(--line)}
@@ -208,12 +210,17 @@ em.chip-none{background:var(--warnsoft);color:var(--warn);font-style:normal;font
 .dot{display:inline-block;width:5px;height:5px;border-radius:50%;background:var(--accent)}
 .fx{font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--ink3);padding-left:92px}
 
-.kindrow{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:2px}
+.kindrow{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:2px}
 .kindbtn{
   border:1px solid var(--line);background:var(--surface);border-radius:7px;padding:9px 11px;cursor:pointer;
   display:flex;flex-direction:column;gap:2px;text-align:left;
 }
-.kindbtn b{font-size:13.5px;font-weight:600}
+.kindbtn b{font-size:13.5px;font-weight:600;display:flex;align-items:center;gap:6px}
+.kindbtn kbd{
+  font-family:"IBM Plex Mono",monospace;font-size:9.5px;font-weight:500;min-width:15px;height:15px;
+  display:grid;place-items:center;border:1px solid var(--line);border-radius:3px;color:var(--ink3);background:var(--surface);
+}
+.kindbtn.on kbd{border-color:transparent;background:rgba(255,255,255,.22);color:var(--accentink)}
 .kindbtn span{font-size:10.5px;color:var(--ink3);line-height:1.35}
 .kindbtn:hover{border-color:var(--accentline);background:var(--raise)}
 .kindbtn.on{background:var(--accent);border-color:var(--accent)}
@@ -253,6 +260,7 @@ em.chip-none{background:var(--warnsoft);color:var(--warn);font-style:normal;font
 .empty{padding:60px 24px;text-align:center;color:var(--ink3);font-size:13px}
 .empty b{display:block;color:var(--ink);font-size:15px;font-weight:600;margin-bottom:6px}
 
+@media (max-width:860px){.kindrow{grid-template-columns:repeat(2,1fr)}}
 @media (max-width:700px){
   .line1{grid-template-columns:64px minmax(0,1fr);row-gap:4px}
   .amt{grid-column:1/-1;justify-content:flex-start;padding-left:76px}
@@ -456,17 +464,20 @@ tr.subtotal td:first-child{background:var(--raise)}
 <!-- ============ SORT ============ -->
 <section class="pane" id="pane-sort">
   <div class="sortpane">
+    <div class="stickyhead">
     <div class="filters">
       <div class="chipset" id="filterChips">
         <button class="chip" data-f="todo" aria-pressed="true">To sort <b id="c-todo">0</b></button>
         <button class="chip" data-f="auto" aria-pressed="false">By rule <b id="c-auto">0</b></button>
         <button class="chip" data-f="done" aria-pressed="false">Sorted <b id="c-done">0</b></button>
+        <button class="chip" id="chip-xfer" data-f="xfer" aria-pressed="false">Transfers <b id="c-xfer">0</b></button>
         <button class="chip" data-f="all" aria-pressed="false">All <b id="c-all">0</b></button>
       </div>
       <div style="flex:1;min-width:150px"><input type="text" id="listSearch" placeholder="Filter descriptions…" style="padding:5px 9px;font-size:12.5px"></div>
       <select id="acctFilter" style="width:auto;padding:5px 9px;font-size:12.5px"></select>
     </div>
     <p class="hint sorthint" id="sortHint"></p>
+    </div>
     <div class="rows" id="rowList"></div>
   </div>
 </section>
@@ -849,11 +860,16 @@ const isTrack=()=>S.book==="track";
    Older shapes: a bare string, or {c,t} where c was the sheet line.          */
 function normRule(r){
   if(!r) return null;
-  if(typeof r==="string") return {k:null,l:null,t:r};
-  if(r.k||r.l!==undefined&&r.t!==undefined&&!r.c) return {k:r.k||null,l:r.l||null,t:r.t||null};
+  if(typeof r==="string") return {k:r==="x_transfer"?"transfer":null,l:null,t:r};
+  if(r.k||r.l!==undefined&&r.t!==undefined&&!r.c){
+    let k=r.k||null;
+    if(k==="exclude"&&r.t==="x_transfer") k="transfer";
+    return {k,l:r.l||null,t:r.t||null};
+  }
   if(r.c){
     const line=TRK[r.c];
     if(line) return {k:line.scope==="personal"?"personal":"business",l:r.c,t:r.t||(line.scope==="personal"?"x_personal":null)};
+    if(r.t==="x_transfer") return {k:"transfer",l:null,t:"x_transfer"};
     return {k:null,l:null,t:r.t||null};
   }
   return null;
@@ -870,9 +886,12 @@ function normTx(t,track){
     const line=t.line?TRK[t.line]:null;
     const tax=t.tax?CAT[t.tax]:null;
     t.kind = line ? (line.scope==="personal"?"personal":"business")
+           : t.tax==="x_transfer" ? "transfer"
            : tax&&tax.kind==="exclude" ? "exclude"
            : null;
   }
+  if(t.kind==="exclude"&&t.tax==="x_transfer") t.kind="transfer";
+  if(t.kind==="transfer"&&!t.tax) t.tax="x_transfer";
   if(t.kind==="personal"&&!t.tax) t.tax="x_personal";
   return t;
 }
@@ -963,6 +982,7 @@ function lineOf(t){ return isTrack()?(t.line||null):null; }
 function settled(t){
   if(!isTrack()) return !!t.cat;
   if(t.kind==="personal") return !!t.line;
+  if(t.kind==="transfer") return true;               // nothing more to say about it
   if(t.kind==="exclude")  return !!t.tax;
   if(t.kind==="business") return !!t.tax&&!!t.line;   // the return AND the sheet
   return false;
@@ -1416,16 +1436,23 @@ function backupFile(){
 let curId=null, filter="todo", listQ="", acctQ="", pickQ="", pickSel=0, pickMode=null, ruleOn=true;
 
 const KINDS=[
-  {k:"personal", label:"Personal",  hint:"living, lifestyle, anything not for the business"},
-  {k:"business", label:"Business",  hint:"goes on the return"},
-  {k:"exclude",  label:"Neither",   hint:"transfers, drawings, tax payments, loan principal"},
+  {k:"personal", label:"Personal",  key:"P", hint:"living, lifestyle, anything not for the business"},
+  {k:"business", label:"Business",  key:"B", hint:"goes on the return"},
+  {k:"transfer", label:"Transfer",  key:"T", hint:"your own money moving — nothing to record"},
+  {k:"exclude",  label:"Other",     key:"O", hint:"drawings, tax, GST, loan principal"},
 ];
-const EXCLUDE_CATS=["x_transfer","x_drawings","x_tax","x_gst","x_loan","x_capital"];
+/* Transfers have their own button, so they are not in this list. */
+const EXCLUDE_CATS=["x_drawings","x_tax","x_gst","x_loan","x_capital"];
+const isTransfer=t=>isTrack()&&t.kind==="transfer";
 
 function visibleTx(){
   const q=listQ.toLowerCase();
   return B().tx.filter(t=>{
     const done=settled(t);
+    /* Transfers drop out of the working views and live behind their own
+       filter, so what's left in front of you is money that matters. */
+    if(filter==="xfer") return isTransfer(t);
+    if(isTransfer(t)&&filter!=="all") return false;
     if(filter==="todo"&&done) return false;
     if(filter==="done"&&(!done||t.auto)) return false;
     if(filter==="auto"&&!t.auto) return false;
@@ -1435,13 +1462,14 @@ function visibleTx(){
   });
 }
 function counts(){
-  let todo=0,auto=0,done=0;
+  let todo=0,auto=0,done=0,xfer=0;
   for(const t of B().tx){
+    if(isTransfer(t)){ xfer++; continue; }
     if(!settled(t)) todo++;
     else if(t.auto) auto++;
     else done++;
   }
-  return {todo,auto,done,all:B().tx.length};
+  return {todo,auto,done,xfer,all:B().tx.length};
 }
 function renderProgress(){
   const c=counts(), n=c.all, sorted=n-c.todo;
@@ -1449,6 +1477,9 @@ function renderProgress(){
   $("#progTxt").textContent=`${sorted} / ${n}`;
   $("#c-todo").textContent=c.todo; $("#c-auto").textContent=c.auto;
   $("#c-done").textContent=c.done; $("#c-all").textContent=c.all;
+  $("#c-xfer").textContent=c.xfer;
+  $("#chip-xfer").style.display=isTrack()?"":"none";
+  if(!isTrack()&&filter==="xfer") filter="todo";
 }
 function currentTx(){ return B().tx.find(t=>t.id===curId)||null; }
 
@@ -1465,6 +1496,7 @@ function pickPool(t){
   if(t.kind==="exclude"){
     return EXCLUDE_CATS.filter(k=>CAT[k]).map(k=>({key:k,label:CAT[k].label,note:"",hay:CAT[k].label}));
   }
+  if(t.kind==="transfer") return [];
   if(t.kind==="business"){
     const want=t.amt>=0?"income":"expense";
     return CATLIST.filter(c=>c.kind===want).map(c=>({key:c.key,label:c.label,note:c.group,
@@ -1521,7 +1553,8 @@ function money(t){
 function chips(t){
   if(!isTrack()) return t.cat?`<em class="chip-cat k-${CAT[t.cat].kind}">${esc(CAT[t.cat].label)}</em>`:"";
   const out=[];
-  if(t.kind) out.push(`<em class="chip-kind k-${t.kind}">${esc(KINDS.find(k=>k.k===t.kind).label)}</em>`);
+  if(t.kind) out.push(`<em class="chip-kind k-${t.kind}">${esc((KINDS.find(k=>k.k===t.kind)||{label:t.kind}).label)}</em>`);
+  if(t.kind==="transfer") return out.join("");
   if(t.kind==="business"&&t.tax&&CAT[t.tax]) out.push(`<em class="chip-cat">${esc(CAT[t.tax].label)}</em>`);
   if(t.kind==="exclude"&&t.tax&&CAT[t.tax]) out.push(`<em class="chip-cat">${esc(CAT[t.tax].label)}</em>`);
   if(t.line&&TRK[t.line]) out.push(`<em class="chip-line" title="${esc(lineWhere(t.line))}">${esc(lineLabel(t.line))}</em>`);
@@ -1549,7 +1582,7 @@ function activeCard(t){
   if(isTrack()){
     body+=`<div class="kindrow">${KINDS.map(k=>
       `<button class="kindbtn${t.kind===k.k?" on":""}" data-kind="${k.k}">
-         <b>${k.label}</b><span>${k.hint}</span>
+         <b>${k.label}<kbd>${k.key}</kbd></b><span>${k.hint}</span>
        </button>`).join("")}</div>`;
   }
 
@@ -1630,11 +1663,17 @@ function resetPick(){ pickQ=""; pickSel=0; pickMode=null; ruleOn=true; }
 /* ---------- the three answers ---------- */
 function setKind(kind){
   const t=currentTx(); if(!t) return;
+  const list=visibleTx(), i=list.findIndex(x=>x.id===t.id);
+  const nextId=(list.slice(i+1).find(x=>filter!=="todo"||!settled(x))||{}).id||null;
+  t.line=null; t.auto=false;
   t.kind=kind;
-  t.line=null;
-  t.tax=kind==="personal"?"x_personal":null;
-  t.auto=false;
+  t.tax=kind==="personal"?"x_personal":kind==="transfer"?"x_transfer":null;
   pickMode=null; pickQ=""; pickSel=0;
+  if(kind==="transfer"){                       // the whole answer, in one press
+    applyRule(t,{k:"transfer",l:null,t:"x_transfer"});
+    advance(nextId);
+    return;
+  }
   markDirty(); renderList();
 }
 function choose(key){
@@ -1761,7 +1800,7 @@ function renderShell(){
   $$(".bookbtn").forEach(b=>b.setAttribute("aria-selected",String(b.dataset.book===S.book)));
   $("#fyLabel").textContent=activeFY().label;
   $("#sortHint").innerHTML=isTrack()
-    ? `<b style="color:var(--ink2)">P</b> personal · <b style="color:var(--ink2)">B</b> business · <b style="color:var(--ink2)">N</b> neither · then type and press <b style="color:var(--ink2)">Enter</b>, or hit <b style="color:var(--ink2)">1–9</b>. <b style="color:var(--ink2)">↑↓</b> move · <b style="color:var(--ink2)">R</b> toggles the rule · <b style="color:var(--ink2)">Backspace</b> clears the row.`
+    ? `<b style="color:var(--ink2)">P</b> personal · <b style="color:var(--ink2)">B</b> business · <b style="color:var(--ink2)">T</b> transfer, done in one press · <b style="color:var(--ink2)">O</b> other · then type and press <b style="color:var(--ink2)">Enter</b>, or hit <b style="color:var(--ink2)">1–9</b>. <b style="color:var(--ink2)">↑↓</b> move · <b style="color:var(--ink2)">R</b> toggles the rule · <b style="color:var(--ink2)">Backspace</b> clears the row.`
     : `Type and press <b style="color:var(--ink2)">Enter</b>, or hit <b style="color:var(--ink2)">1–9</b>. <b style="color:var(--ink2)">↑↓</b> move · <b style="color:var(--ink2)">Backspace</b> clears the row.`;
 }
 function renderAll(){ renderShell(); renderList(); renderAccounts(); renderProgress(); renderTracks(); renderStorage(); }
@@ -2297,12 +2336,12 @@ document.addEventListener("keydown",e=>{
   if(e.key==="Backspace"&&!pickQ){ e.preventDefault(); unassign(); return; }
 
   /* The three answers, while nothing is typed into the picker. */
-  if(isTrack()&&!pickQ&&/^[pbnr]$/i.test(e.key)){
+  if(isTrack()&&!pickQ&&/^[pbtonr]$/i.test(e.key)){
     const k=e.key.toLowerCase();
     if(k==="r"){ e.preventDefault(); ruleOn=!ruleOn; renderList(); return; }
     if(t&&!pickMode){
       e.preventDefault();
-      setKind(k==="p"?"personal":k==="b"?"business":"exclude");
+      setKind(k==="p"?"personal":k==="b"?"business":k==="t"?"transfer":"exclude");
       setTimeout(focusPick,20);
       return;
     }
