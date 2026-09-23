@@ -4,6 +4,50 @@ What was built, when, and what you'd need to know to change it. Newest first.
 
 ---
 
+## 23 September 2026 — The year a transaction belongs to
+
+Daniel, sorting a June 2025 row: "It stopped asking me the tax line because we
+are outside of the tax view."
+
+**The diagnosis was wrong but it found a real hole.** Nothing in the sort flow
+looks at the financial year — `inFY` only touches the note on the card and what
+the report counts. A personal answer asks for the Budget Tracker line and no ATO
+category, by design, because personal spending is not on the return; that is
+what looks like "it stopped asking".
+
+The hole is underneath. `FY_LIST` was three hand-written years starting at
+FY 2025-26, and his first real statement runs **11 June to 8 July 2025**. The
+June rows belong to FY 2024-25, which was not on the list at all — so they could
+not be filed in any year, and the app said only "Outside FY 2026-27" without
+mentioning that the year they wanted did not exist.
+
+**Years are generated now**, three back from the current one to one ahead, so
+the list moves with time instead of going stale:
+
+    FY 2023–24 · FY 2024–25 · FY 2025–26 · FY 2026–27 · FY 2027–28
+
+The ids keep their old shape (`fy2526`) so a saved file still resolves. A fresh
+install opens on the year we are actually in rather than a hardcoded guess.
+
+**The note stopped being a warning.** A transaction outside the year you are
+reading is completely normal, and sorting does not care — a row is coded once
+and every year's report reads the same answers. So instead of amber "Outside
+FY 2026-27", it says which year the row counts in and offers a button to go
+there:
+
+> Counts in **FY 2024–25**, not the FY 2026–27 report you have open. [Read FY 2024–25]
+
+**And the year moved into the header**, as a dropdown rather than a caption. It
+decides what the tax report reads, and keeping it on the report screen is how a
+whole statement gets sorted against the wrong year without a word being said.
+
+`fy.test.mjs` covers the boundary both ways (30 June and 1 July), that a date
+outside the window returns nothing rather than guessing, that sorting works
+unchanged with the "wrong" year open, and that the button and the header stay in
+step.
+
+---
+
 ## 23 September 2026 — Twenty lines that were never going to be used
 
 Sorting for real is what exposes a seeded list. Daniel, on the GIA sheet's

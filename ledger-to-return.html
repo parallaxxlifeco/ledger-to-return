@@ -297,6 +297,10 @@ em.chip-none{background:var(--warnsoft);color:var(--warn);font-style:normal;font
 .rulerow .mk{font-family:"IBM Plex Mono",monospace;font-size:12px;font-weight:600;min-width:190px}
 .rulerow .n{font-size:11.5px;color:var(--ink2)}
 .rulerow .acts{margin-left:auto;display:flex;gap:7px}
+#fyLabel select{
+  width:auto;padding:2px 22px 2px 7px;font-size:11px;font-family:inherit;font-weight:600;
+  letter-spacing:.04em;background-color:var(--surface2);border-color:var(--line);color:var(--ink2);
+}
 .settledrow{display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--surface2);border-radius:7px;padding:9px 12px}
 .settledrow b{font-size:13px}
 .rulebox{
@@ -1152,12 +1156,26 @@ function statementCsv(rows){
      tax   - the FY 2025-26 return. One code per transaction: a tax category.
      track - ongoing tracking. Two codes: a tracker line that feeds a Google
              Sheet, and the tax category that line rolls into (overridable).  */
-const FY_LIST=[
-  {id:"fy2526",start:"2025-07-01",end:"2026-06-30",label:"FY 2025\u201326"},
-  {id:"fy2627",start:"2026-07-01",end:"2027-06-30",label:"FY 2026\u201327"},
-  {id:"fy2728",start:"2027-07-01",end:"2028-06-30",label:"FY 2027\u201328"},
-];
-const FY=FY_LIST[0];                       // the tax book is fixed to FY 2025-26
+/* Australian financial years, 1 July to 30 June. Generated rather than written
+   out, because a hand-kept list is a trap you only find by falling in it: the
+   first real statement loaded ran 11 June to 8 July 2025, and its June rows
+   belong to FY 2024-25, which simply was not on the list. They could not be put
+   in any year. The window runs three back from the current one to one ahead. */
+const FY_LIST=(()=>{
+  const now=new Date();
+  const cur=now.getMonth()>=6?now.getFullYear():now.getFullYear()-1;   // July starts it
+  const fy=y=>({id:"fy"+String(y%100).padStart(2,"0")+String((y+1)%100).padStart(2,"0"),
+                start:y+"-07-01",end:(y+1)+"-06-30",
+                label:"FY "+y+"\u2013"+String((y+1)%100).padStart(2,"0")});
+  const out=[];
+  for(let y=cur-3;y<=cur+1;y++) out.push(fy(y));
+  return out;
+})();
+const todayIso=()=>{const d=new Date();return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");};
+const CUR_FY=(()=>{const t=todayIso();return FY_LIST.find(f=>t>=f.start&&t<=f.end)||FY_LIST[FY_LIST.length-2];})();
+/* Which year a date belongs to, whatever is being looked at right now. */
+const fyOf=iso=>FY_LIST.find(f=>iso>=f.start&&iso<=f.end)||null;
+const FY=FY_LIST.find(f=>f.id==="fy2526")||CUR_FY;   // the tax book's own year
 const LSKEY="l2r.state.v2";
 const LSKEY_V1="l2r.state.v1";
 const BOOKS=[
@@ -1167,7 +1185,7 @@ const BOOKS=[
 const emptyBook=()=>({tx:[],rules:{},biz:{name:"",abn:""}});
 let S={v:3,book:"track",books:{tax:emptyBook(),track:emptyBook()},tracks:null,
        lineFor:{},                                  // ATO category key -> sheet line key
-       taxFy:"fy2627",gridYear:new Date().getFullYear()};
+       taxFy:CUR_FY.id,gridYear:new Date().getFullYear()};
 
 const B=()=>S.books[S.book];                    // the active book
 const isTrack=()=>S.book==="track";
@@ -1238,7 +1256,7 @@ function migrate(p){
   }
   if(Array.isArray(p.tx)){                       // v1: a single tax-return book
     const nr={}; for(const mk in (p.rules||{})){ const r=normRule(p.rules[mk]); if(r) nr[mk]=r; }
-    return {v:3,book:"tax",tracks:null,lineFor:{},taxFy:"fy2627",gridYear:new Date().getFullYear(),
+    return {v:3,book:"tax",tracks:null,lineFor:{},taxFy:CUR_FY.id,gridYear:new Date().getFullYear(),
             books:{tax:{tx:p.tx,rules:nr,biz:p.biz||{name:"",abn:""}},track:emptyBook()}};
   }
   return null;
@@ -1301,7 +1319,7 @@ function enrich(t){
   const aud=fx.rate==null?null:Math.round(t.amt*fx.rate*100)/100;
   return {...t,rate:fx.rate,rateSrc:fx.src,rateStatus:fx.status,aud};
 }
-function activeFY(){ return isTrack()?(FY_LIST.find(f=>f.id===S.taxFy)||FY_LIST[1]):FY; }
+function activeFY(){ return isTrack()?(FY_LIST.find(f=>f.id===S.taxFy)||CUR_FY):FY; }
 function inFY(t,fy){ const f=fy||activeFY(); return t.date>=f.start&&t.date<=f.end; }
 /* the tax code carried by a transaction, whichever book it is in */
 function taxOf(t){ return isTrack()?(t.tax||null):t.cat; }
@@ -2006,7 +2024,16 @@ function activeCard(t){
   }else if(e.rate==null){
     note=`<div class="fx" style="color:var(--crit)">No rate for ${esc(t.cur)} on this date.</div>`;
   }
-  if(!inFY(t)) note+=`<div class="fx" style="color:var(--warn)">Outside ${activeFY().label} — in the monthly grid, out of the tax view.</div>`;
+  /* Not a warning — a transaction outside the year being read is completely
+     normal, and sorting does not care: it is coded once and every year's report
+     reads from the same answers. It only says which year this one lands in, and
+     offers to go there. */
+  if(!inFY(t)){
+    const home=fyOf(t.date);
+    note+=`<div class="fx">${home
+      ? `Counts in <b style="color:var(--ink)">${esc(home.label)}</b>, not the ${esc(activeFY().label)} report you have open. <button class="btn sm noprint" data-fy="${home.id}" style="margin-left:6px">Read ${esc(home.label)}</button>`
+      : `Dated ${niceDate(t.date)}, outside every financial year the app covers.`}</div>`;
+  }
 
   return `<div class="txcard cur" data-id="${t.id}">
     <div class="line1">
@@ -2024,6 +2051,10 @@ function wireCards(){
     if(c.dataset.id!==curId){ curId=c.dataset.id; resetPick(); renderList(); }
   }));
   $$("#rowList .kindbtn").forEach(b=>b.addEventListener("click",()=>setKind(b.dataset.kind)));
+  $$("#rowList [data-fy]").forEach(b=>b.addEventListener("click",e=>{
+    e.stopPropagation(); S.taxFy=b.dataset.fy; markDirty(); renderAll();
+    toast(`Reading ${activeFY().label}`);
+  }));
   $$("#rowList .pickopt").forEach(b=>b.addEventListener("click",()=>choose(b.dataset.pick)));
   const rb=$("#ruleChk"); if(rb) rb.addEventListener("change",()=>{ruleOn=rb.checked;renderList();});
   const rl=$("#rowList [data-relearn]"); if(rl) rl.addEventListener("click",()=>{pickMode="line";pickQ="";pickSel=0;renderList();focusPick();});
@@ -2256,7 +2287,15 @@ function switchBook(id){
 }
 function renderShell(){
   $$(".bookbtn").forEach(b=>b.setAttribute("aria-selected",String(b.dataset.book===S.book)));
-  $("#fyLabel").textContent=activeFY().label;
+  /* The year lives in the header, as a control rather than a caption: it is what
+     the tax report reads, and leaving it somewhere else is how a whole statement
+     gets sorted against the wrong one without a word being said. */
+  const fyBox=$("#fyLabel");
+  if(isTrack()){
+    fyBox.innerHTML=`<select id="fyTop" title="Which year the tax report reads">${
+      FY_LIST.map(f=>`<option value="${f.id}"${f.id===S.taxFy?" selected":""}>${f.label}</option>`).join("")}</select>`;
+    $("#fyTop").addEventListener("change",e=>{S.taxFy=e.target.value;markDirty();renderAll();});
+  }else fyBox.textContent=activeFY().label;
   $("#sortHint").innerHTML=isTrack()
     ? `<b style="color:var(--ink2)">P</b> personal · <b style="color:var(--ink2)">B</b> business · <b style="color:var(--ink2)">T</b> transfer, done in one press · <b style="color:var(--ink2)">O</b> other · then type and press <b style="color:var(--ink2)">Enter</b>, or hit <b style="color:var(--ink2)">1–9</b>. <b style="color:var(--ink2)">↑↓</b> move · <b style="color:var(--ink2)">R</b> toggles the rule · <b style="color:var(--ink2)">Backspace</b> clears the row.`
     : `Type and press <b style="color:var(--ink2)">Enter</b>, or hit <b style="color:var(--ink2)">1–9</b>. <b style="color:var(--ink2)">↑↓</b> move · <b style="color:var(--ink2)">Backspace</b> clears the row.`;
