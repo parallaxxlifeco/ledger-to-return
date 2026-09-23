@@ -818,12 +818,11 @@ const SHEET_SEED=[
      ["Tickets"],["Speakers"],["Partners"]]},
    {g:"CIRCLES", kind:"income", lines:[
      ["Reconnected Man"],["Founders Breakfast"]]},
+   /* The GIA sheet prints the software lines too, but they are never used there
+      — subscriptions are a Budget Tracker matter. What is left is what actually
+      carries figures, and what the Budget Tracker roll-up depends on. */
    {g:"GIVE IT ALL", kind:"expense", lines:[
-     ["Teachable"],["Twilio / Skype"],["Facebook"],
-     ["Zoom/Video"],["Klaviyo"],["Misc Subcriptions"],
-     ["Typeform"],["Adobe"],["Microsoft"],
-     ["Events"],["Design"],["VENUE"],
-     ["EDITING"],["ADMIN / ASSISTANT"],["LOGISTICS"]]},
+     ["VENUE"],["EDITING"],["ADMIN / ASSISTANT"],["LOGISTICS"]]},
    {g:"CIRCLES", kind:"expense", lines:[
      ["Founders Breakfast"]]},
  ]},
@@ -836,13 +835,12 @@ const SHEET_SEED=[
      ["Contract/Misc"]]},
    {g:"PARALLAXX", kind:"income", lines:[
      ["Amazon AU"],["Amazon US"],["Shopify"]]},
+   /* Teachable, Twilio, Facebook, Zoom, Klaviyo, Typeform, Adobe, Microsoft and
+      Misc Subcriptions all fold into Regular Subcriptions — nine decisions that
+      were only ever one. */
    {g:"TRANSFORMATIONS", kind:"expense", lines:[
-     ["Teachable"],["Twilio / Skype"],["Facebook"],
-     ["Zoom/Video"],["Klaviyo"],["Misc Subcriptions"],
-     ["Typeform"],["Adobe"],["Microsoft"],
-     ["Events"],["Design"],["Other"],
-     ["Regular Subcriptions"],["Ivan - Socials"],
-     ["Web/Email/Phone"],["VA Admin"],
+     ["Regular Subcriptions"],["Events"],["Design"],["Other"],
+     ["Ivan - Socials"],["Web/Email/Phone"],["VA Admin"],
      ["Founders Breakfast"],["GIA"],
      ["Business Travel / Ads"]]},
    {g:"PARALLAXX", kind:"expense", lines:[
@@ -899,6 +897,34 @@ function seedTracks(){
   }
   return out;
 }
+/* Lines that used to exist and were taken out. A saved file still carries them,
+   so they are dropped on load — but only when nothing is coded to them, because
+   losing an answer is worse than carrying a line you don't want. */
+const RETIRED_LINES=new Set([
+  "gia:give-it-all:expense:teachable","gia:give-it-all:expense:twilio-skype",
+  "gia:give-it-all:expense:facebook","gia:give-it-all:expense:zoom-video",
+  "gia:give-it-all:expense:klaviyo","gia:give-it-all:expense:misc-subcriptions",
+  "gia:give-it-all:expense:typeform","gia:give-it-all:expense:adobe",
+  "gia:give-it-all:expense:microsoft","gia:give-it-all:expense:events",
+  "gia:give-it-all:expense:design",
+  "budget:transformations:expense:teachable","budget:transformations:expense:twilio-skype",
+  "budget:transformations:expense:facebook","budget:transformations:expense:zoom-video",
+  "budget:transformations:expense:klaviyo","budget:transformations:expense:misc-subcriptions",
+  "budget:transformations:expense:typeform","budget:transformations:expense:adobe",
+  "budget:transformations:expense:microsoft",
+]);
+function pruneRetired(){
+  const used=new Set();
+  for(const k of ["tax","track"]) for(const t of ((S.books&&S.books[k]&&S.books[k].tx)||[])) if(t.line) used.add(t.line);
+  const before=TRACKS.length;
+  TRACKS=TRACKS.filter(l=>!(RETIRED_LINES.has(l.key)&&!used.has(l.key)));
+  const gone=new Set([...RETIRED_LINES].filter(k=>!TRACKS.some(l=>l.key===k)));
+  for(const c in (S.lineFor||{})) if(gone.has(S.lineFor[c])) delete S.lineFor[c];
+  for(const l of TRACKS) if(l.rollsTo&&gone.has(l.rollsTo)) l.rollsTo=null;
+  if(TRACKS.length!==before){ indexTracks(); S.tracks=TRACKS; }
+  return before-TRACKS.length;
+}
+
 /* Live list, replaced from storage on boot. */
 let TRACKS=seedTracks();
 let TRK={};
@@ -1246,6 +1272,7 @@ async function boot(){
   if(!local){ try{ local=migrate(JSON.parse(localStorage.getItem(LSKEY_V1))); }catch(e){} }
   if(local) S=Object.assign(S,local);
   if(Array.isArray(S.tracks)&&S.tracks.length){ TRACKS=S.tracks; indexTracks(); }
+  pruneRetired();
   Store=localStore;
   renderAll(); renderStorage();
 
@@ -1269,6 +1296,7 @@ async function boot(){
       S=Object.assign(S,remote);
       S.lineFor=remote.lineFor||S.lineFor||{};
       if(Array.isArray(remote.tracks)&&remote.tracks.length){ TRACKS=remote.tracks; indexTracks(); S.tracks=TRACKS; }
+      pruneRetired();
       localSave();
     }else if(localCount){ markDirty(); }
   }catch(e){

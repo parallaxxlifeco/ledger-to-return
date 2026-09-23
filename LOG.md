@@ -4,6 +4,49 @@ What was built, when, and what you'd need to know to change it. Newest first.
 
 ---
 
+## 23 September 2026 — Twenty lines that were never going to be used
+
+Sorting for real is what exposes a seeded list. Daniel, on the GIA sheet's
+expense block: "All of these options can be removed - not relevant here." Then
+on the Budget Tracker's copies of the same names: "All of these can be folded
+into the one heading of Regular Subscriptions."
+
+Both sheets print a per-product software list — Teachable, Twilio / Skype,
+Facebook, Zoom/Video, Klaviyo, Misc Subcriptions, Typeform, Adobe, Microsoft —
+and neither has ever carried a figure in one. Nine near-identical rows to scroll
+past on every single answer, for a decision that was only ever "subscriptions".
+
+Removed, from the seed:
+
+| | before | after |
+|---|---|---|
+| GIVE IT ALL expense | 15 | **4** — VENUE, EDITING, ADMIN / ASSISTANT, LOGISTICS |
+| TRANSFORMATIONS expense | 19 | **10** |
+| all tracker lines | 83 | **63** |
+
+GIVE IT ALL keeps exactly the four that carry figures in his sheet, which are
+also the four the Budget Tracker roll-up is built on. Events and Design went
+from the GIA sheet too — empty there, and duplicated under TRANSFORMATIONS,
+where they stay. CIRCLES was left alone: its Founders Breakfast line does carry
+figures ($47.28 in May, $55.42 in June) and feeds the roll-up.
+
+**Changing the seed is not enough**, because a saved file carries its own copy
+of the line list — the seed is only what a fresh start gets. `RETIRED_LINES` and
+`pruneRetired()` drop them on load, clear any `lineFor` pairing that pointed at
+one, and null any `rollsTo` aimed at one.
+
+**It only drops a line nothing is coded to.** Losing an answer is worse than
+carrying a line you don't want, so a retired line with a transaction on it stays
+until that transaction moves. Checked before making the change: on his live
+data, nothing was coded to any of them.
+
+One test broke, and it broke honestly: `migration.test.mjs` had a fixture whose
+old-shape rule pointed at `budget:transformations:adobe`. The app handled it
+correctly — no line, row unsettled — but the test then read `.label` off
+nothing. Repointed at Regular Subcriptions, which is where those lines folded.
+
+---
+
 ## 23 September 2026 — Lift the row being answered
 
 An outline was not enough. On a dark background `.txcard.cur` was a faint

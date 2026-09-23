@@ -22,18 +22,24 @@ await p.evaluate(() => {
   const track = [
     {date:"2026-07-05",desc:"EVENTBRITE TICKETS",cur:"AUD",amt:2340,acct:"Wise",id:"t1",mk:"EVENTBRITE TICKETS",cat:"gia:give-it-all:tickets",tax:"inc_event",auto:false},
     {date:"2026-07-06",desc:"WARUNG GROCERIES",cur:"IDR",amt:-450000,acct:"Wise",id:"t2",mk:"WARUNG GROCERIES",cat:"budget:living:groceries",tax:"x_personal",auto:false},
-    {date:"2026-07-09",desc:"ADOBE CC",cur:"USD",amt:-89.99,acct:"Wise",id:"t3",mk:"ADOBE",cat:"budget:transformations:adobe",tax:"ex_software",auto:true},
+    {date:"2026-07-09",desc:"ADOBE CC",cur:"USD",amt:-89.99,acct:"Wise",id:"t3",mk:"ADOBE",cat:"budget:transformations:regular-subcriptions",tax:"ex_software",auto:true},
     {date:"2026-07-12",desc:"TRANSFER OUT",cur:"AUD",amt:-500,acct:"Wise",id:"t4",mk:"TRANSFER OUT",cat:null,tax:"x_transfer",auto:false}
   ];
   const tax = [{date:"2025-09-15",desc:"SEWA VILLA",cur:"IDR",amt:-25000000,acct:"BCA",id:"a1",mk:"SEWA VILLA",cat:"ex_venue",auto:false}];
   localStorage.setItem('FAKEDB:meta/state', JSON.stringify({v:2, counts:{tax:1,track:1},
-    rules:{tax:{"SEWA VILLA":{c:"ex_venue",t:null}}, track:{"ADOBE":{c:"budget:transformations:adobe",t:"ex_software"}}},
+    rules:{tax:{"SEWA VILLA":{c:"ex_venue",t:null}}, track:{"ADOBE":{c:"budget:transformations:regular-subcriptions",t:"ex_software"}}},
     biz:{tax:{name:"Parallaxx",abn:"11 222 333 444"}, track:{name:"",abn:""}}}));
   localStorage.setItem('FAKEDB:trk/c0', JSON.stringify({i:0, items:track}));
   localStorage.setItem('FAKEDB:tx/c0',  JSON.stringify({i:0, items:tax}));
 });
 await p.reload();
 await p.waitForTimeout(1400);
+
+/* The old key shape had no direction in it — sheet:block:label — so this also
+   checks resolveLine still upgrades one. It points at Regular Subcriptions
+   because that is where the per-product software lines were folded; a fixture
+   naming a line that has since been retired would be testing the prune, not
+   the migration. */
 
 console.log('MIGRATED (old cat/tax -> kind + line + tax)');
 console.log(await p.evaluate(() => S.books.track.tx.map(t =>

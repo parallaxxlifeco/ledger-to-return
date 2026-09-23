@@ -91,6 +91,51 @@ const rule = await p.evaluate(() => {
 check('the rule is saved', rule.saved === 1);
 check('the refund going the other way is left unsorted', !rule.refundCoded && !rule.refundAuto);
 
+/* --- the lines that were taken out stay out, unless something is coded to one --- */
+console.log('\nRETIRED LINES:');
+const retired = await p.evaluate(() => {
+  const names = ['Teachable', 'Twilio / Skype', 'Facebook', 'Zoom/Video', 'Klaviyo',
+                 'Misc Subcriptions', 'Typeform', 'Adobe', 'Microsoft'];
+  const gia = TRACKS.filter(l => l.sheet === 'gia');
+  const bud = TRACKS.filter(l => l.sheet === 'budget' && l.group === 'TRANSFORMATIONS' && l.kind === 'expense');
+  return {
+    giaExpense: gia.filter(l => l.kind === 'expense' && l.group === 'GIVE IT ALL').map(l => l.label),
+    giaCircles: gia.filter(l => l.group === 'CIRCLES').map(l => l.kind + '/' + l.label),
+    budSoftware: bud.filter(l => names.includes(l.label)).map(l => l.label),
+    hasRegularSubs: bud.some(l => l.label === 'Regular Subcriptions'),
+    budKeeps: bud.map(l => l.label),
+    total: TRACKS.length,
+  };
+});
+check('GIVE IT ALL keeps only the four that carry figures',
+  JSON.stringify(retired.giaExpense) === JSON.stringify(['VENUE', 'EDITING', 'ADMIN / ASSISTANT', 'LOGISTICS']),
+  retired.giaExpense.join(', '));
+check('CIRCLES is untouched — it carries real figures and feeds the roll-up',
+  retired.giaCircles.length === 3, retired.giaCircles.join(', '));
+check('the Budget Tracker software lines are gone', retired.budSoftware.length === 0, retired.budSoftware.join(', '));
+check('Regular Subcriptions is still there to fold them into', retired.hasRegularSubs, retired.budKeeps.join(', '));
+
+/* a saved file still carrying a retired line: dropped, unless it is in use */
+const pruned = await p.evaluate(() => {
+  const dead = 'budget:transformations:expense:adobe';
+  const revive = () => TRACKS.push({key: dead, sheet: 'budget', group: 'TRANSFORMATIONS',
+    label: 'Adobe', kind: 'expense', scope: 'business', rollsTo: null});
+
+  revive(); indexTracks();
+  B().tx = [];
+  const unusedGone = (pruneRetired(), !TRACKS.some(l => l.key === dead));
+
+  revive(); indexTracks();
+  B().tx = [normTx({id: 'z', date: '2026-07-02', desc: 'Adobe', amt: -27.8, cur: 'AUD', acct: 'a', mk: 'ADOBE', kind: 'business', line: dead, tax: CATLIST.find(c => /Software/.test(c.label)).key})];
+  const usedKept = (pruneRetired(), TRACKS.some(l => l.key === dead));
+
+  B().tx = []; pruneRetired();
+  return {unusedGone, usedKept, left: TRACKS.some(l => l.key === dead)};
+});
+check('a retired line in a saved file is dropped', pruned.unusedGone);
+check('unless a transaction is coded to it', pruned.usedKept);
+check('and it goes once that transaction is gone', !pruned.left);
+
 console.log(bad ? `\n${bad} CHECK(S) FAILED` : '\ndirection is respected everywhere');
 console.log('PAGE ERRORS:', errs.length ? errs : 'none');
 await b.close();
