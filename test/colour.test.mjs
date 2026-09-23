@@ -44,7 +44,10 @@ for (const mode of ['light', 'dark']) {
     const seen = {label: [], note: [], heading: []}, slots = new Set();
     for (const kind of ['business', 'personal']) {
       S.book = 'track';
-      B().tx = [normTx({id: 'x', date: '2026-07-02', desc: 'x', amt: -57.29, cur: 'AUD', acct: 'a', mk: 'X'})];
+      B().tx = [
+        normTx({id: 'x', date: '2026-07-02', desc: 'x', amt: -57.29, cur: 'AUD', acct: 'a', mk: 'X'}),
+        normTx({id: 'y', date: '2026-07-03', desc: 'y', amt: -12.03, cur: 'IDR', acct: 'a', mk: 'Y'}),
+      ];
       renderAll(); go('sort'); curId = 'x'; setKind(kind); renderList();
       for (const o of document.querySelectorAll('.pickopt')) {
         const bg = solve(getComputedStyle(o).backgroundColor);
@@ -58,10 +61,34 @@ for (const mode of ['light', 'dark']) {
         seen.heading.push(ratio(solve(cs.backgroundColor), solve(cs.color)));
       }
     }
+    /* The row being answered sits on an accent wash. Everything printed on it —
+       the description, the account, the rate note, the FY warning — has to
+       survive that, and a tint nudge is exactly what would break it. */
+    const card = document.querySelector('.txcard.cur');
+    /* What a piece of text actually sits on is the nearest ancestor that paints
+       a background — not the card. Compare against the card and a white label on
+       the selected blue button reads as 1.18:1, which is a bug in the ruler, not
+       the page. */
+    const behind = el => {
+      for (let n = el; n && n !== document.documentElement; n = n.parentElement) {
+        const c = getComputedStyle(n).backgroundColor;
+        if (c && c !== 'rgba(0, 0, 0, 0)' && c !== 'transparent') return solve(c);
+      }
+      return solve(getComputedStyle(document.body).backgroundColor);
+    };
+    const onCard = [];
+    for (const sel of ['.line1 .desc', '.line1 .d', '.amt .aud', '.line2 .acct', '.fx', '.kindbtn b', '.kindbtn span']) {
+      for (const el of card.querySelectorAll(sel)) {
+        onCard.push({sel, r: ratio(behind(el), solve(getComputedStyle(el).color))});
+      }
+    }
     return {
       worst: Object.fromEntries(Object.entries(seen).map(([k, v]) => [k, Math.min(...v)])),
       counted: Object.fromEntries(Object.entries(seen).map(([k, v]) => [k, v.length])),
       distinctRails: slots.size,
+      card: {worst: Math.min(...onCard.map(o => o.r)), n: onCard.length,
+             where: onCard.sort((a, b) => a.r - b.r)[0].sel},
+      lifted: getComputedStyle(card).backgroundColor !== getComputedStyle(document.querySelector('.txcard:not(.cur)')).backgroundColor,
     };
   });
 
@@ -71,6 +98,9 @@ for (const mode of ['light', 'dark']) {
     check(`${k} (${res.counted[k]} measured)`, got >= floor, `worst ${got.toFixed(2)}:1, floor ${floor}:1`);
   }
   check('the selected row is reachable and distinct', res.distinctRails >= 5, `${res.distinctRails} distinct rails`);
+  check('the row being answered is a different colour from the rest', res.lifted);
+  check(`text on it stays readable (${res.card.n} measured)`, res.card.worst >= 4.5,
+    `worst ${res.card.worst.toFixed(2)}:1 on ${res.card.where}`);
   if (errs.length) { bad++; console.log('  BAD  page errors:', errs); }
 }
 

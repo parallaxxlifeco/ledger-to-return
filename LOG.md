@@ -4,6 +4,40 @@ What was built, when, and what you'd need to know to change it. Newest first.
 
 ---
 
+## 23 September 2026 — Lift the row being answered
+
+An outline was not enough. On a dark background `.txcard.cur` was a faint
+rectangle: same fill as every other card, distinguished only by a border, which
+is a weak signal for the one thing you most need to be sure of — which
+transaction the next keystroke is about to code.
+
+It now sits on an accent wash (`--tintCur`, 11% light / 22% dark), with a 5px
+accent edge and a wider ring, and everything else in the list drops to 72%
+opacity and comes back on hover. The controls inside keep the plain surface
+colour so they stand on the wash rather than dissolving into it.
+
+**Two contrast failures came out of it**, both real, both invisible by eye:
+
+- `.line2 .acct` — the "CommBank card 4345" line — and `.fx`, the rate note.
+  Both `--ink3`, which scrapes past on the plain surface and falls to **3.24:1
+  light / 2.96:1 dark** on the wash. `--ink2` on the current card now.
+- `.kindbtn span`, the hint under each of the four buttons, at **3.81:1**.
+  `--ink2` everywhere, not just here — it was under the floor on the plain
+  surface too, and had been since the buttons were built.
+
+`colour.test.mjs` now measures every piece of text on the active card as well as
+the pick lists.
+
+**And it got the measurement wrong first, in a way worth recording.** The check
+compared each label against the *card's* background, so the white text on the
+selected blue button scored 1.18:1 — a failure in the ruler, not the page. Text
+sits on the nearest ancestor that actually paints a background, so the test
+walks up the tree to find it. That is the second time in this project a contrast
+check has produced a confident wrong number (the first was parsing `oklab()`
+with a regex). A contrast test needs testing.
+
+---
+
 ## 23 September 2026 — Money out is not ticket sales
 
 Daniel: "a business expense shouldn't show ticket sales as an option to log
