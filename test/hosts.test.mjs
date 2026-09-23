@@ -39,9 +39,10 @@ console.log(' google script tag present:', await p.evaluate(() => !!document.que
 await p.fill('#impAcct','Wise'); await p.fill('#impText',CSV);
 await p.click('#btnParse'); await p.waitForTimeout(300);
 await p.click('#btnAdd'); await p.waitForTimeout(600);
-for(const t of ['tickets gia','venue gia','teachable gia']){
-  await p.click('#catSearch'); await p.fill('#catSearch',t); await p.waitForTimeout(100);
-  await p.keyboard.press('Enter'); await p.waitForTimeout(140);
+for(const [kind, cat, line] of [['b','event ticket','tickets'], ['b','venue hire','venue'], ['p','groceries', null]]){
+  await p.keyboard.press(kind); await p.waitForTimeout(200);
+  await p.fill('#pickInput', cat); await p.keyboard.press('Enter'); await p.waitForTimeout(280);
+  if(line){ await p.fill('#pickInput', line); await p.keyboard.press('Enter'); await p.waitForTimeout(280); }
 }
 console.log(' after sorting:', await p.textContent('#progTxt'), '| chip:', (await p.textContent('#saveFlag')).trim());
 await p.reload(); await p.waitForTimeout(800);
@@ -83,8 +84,8 @@ await p.evaluate(json => {
 }, backup);
 await p.waitForTimeout(500);
 console.log(' after restoring the backup:', await p.textContent('#progTxt'));
-console.log(' codes intact:', await p.evaluate(() => B().tx.map(t => t.cat ? TRK[t.cat].label : '-').join(', ')));
-console.log(' learned line mappings kept:', await p.evaluate(() => TRACKS.filter(t=>t.tax).map(t=>t.label+'->'+CAT[t.tax].label).join(', ') || '(none set yet)'));
+console.log(' codes intact:', await p.evaluate(() => B().tx.map(t => `${t.kind||'-'}/${t.line?TRK[t.line].label:'-'}`).join(', ')));
+console.log(' learned category -> line kept:', await p.evaluate(() => Object.entries(S.lineFor).map(([c,l]) => CAT[c].label+' -> '+TRK[l].label).join(', ') || '(none yet)'));
 await p.context().close();
 
 console.log('\nPAGE ERRORS:', errs.length ? errs : 'none');

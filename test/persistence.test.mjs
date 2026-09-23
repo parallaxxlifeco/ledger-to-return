@@ -30,12 +30,15 @@ await p.waitForTimeout(2500);
 
 console.log('loaded:', await p.textContent('#progTxt'), '| flag:', await p.textContent('#saveFlag'));
 console.log('db writes:', await p.evaluate(() => window.__dbcalls), '(expect chunks + 1 meta)');
-console.log('chunk docs:', await p.evaluate(() => Object.keys(localStorage).filter(k => k.startsWith('FAKEDB:tx/')).sort()));
+console.log('chunk docs:', await p.evaluate(() => Object.keys(localStorage).filter(k => k.startsWith('FAKEDB:trk/')).sort()));
 
-await p.click('#catSearch');
-await p.fill('#catSearch', 'software');
-await p.keyboard.press('Enter');
-await p.waitForTimeout(1500);
+await p.click('.txcard.cur .kindbtn[data-kind="business"]'); await p.waitForTimeout(350);
+// the first generated row is money in, so the picker offers income categories
+await p.fill('#pickInput', 'coaching client'); await p.waitForTimeout(150);
+await p.keyboard.press('Enter'); await p.waitForTimeout(400);
+await p.fill('#pickInput', 'contract'); await p.waitForTimeout(150);
+await p.keyboard.press('Enter'); await p.waitForTimeout(1800);
+console.log('one answer, carried by rule to the rest:', await p.textContent('#progTxt'));
 const before = await p.textContent('#progTxt');
 
 // Wipe the local mirror so the reload has to come back from the store.
@@ -43,7 +46,7 @@ await p.evaluate(() => localStorage.removeItem('l2r.state.v1'));
 await p.reload();
 await p.waitForTimeout(1200);
 console.log('after reload with local cache wiped:', await p.textContent('#progTxt'), '| before:', before);
-console.log('learned rules restored:', await p.evaluate(() => Object.keys(S.rules).length));
+console.log('learned rules restored:', await p.evaluate(() => Object.keys(B().rules).length));
 
 console.log('PAGE ERRORS:', errs.length ? errs : 'none');
 await b.close();

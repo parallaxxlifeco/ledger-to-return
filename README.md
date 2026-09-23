@@ -42,31 +42,46 @@ the exchange rate table and nothing else — switch between them top-left.
 **Tax return — FY 2025–26.** One code per transaction: a business tax category.
 This is the year just gone, sorted once and handed over.
 
-**Tracking — ongoing.** Two codes per transaction, both set in one pass:
+**Tracking — ongoing.** Each transaction is marked personal, business or neither,
+and carries a sheet line and, where it belongs on the return, an ATO category.
+The year gets tracked as it happens and the tax return falls out of the same work
+at the end of it.
 
-1. a **tracker line** — a row in *GIA Finance Tracking* or *Budget Tracker*
-2. the **business tax category** that line rolls into
+## Sorting: one question, then a short list
 
-So the year gets tracked as it happens and the tax return falls out of the same
-work at the end of it.
+Every transaction asks the same first question — **Personal**, **Business** or
+**Neither** — and only then offers a dropdown, which is why the dropdown stays
+short.
 
-## How the tax mapping learns
+**Personal** offers the 18 lines from your Budget Tracker's LIVING, SELF-CARE,
+LIFESTYLE, PERSONAL and MISC PAYMENTS blocks. That is the whole answer: personal
+spending feeds the monthly grid and never touches the return.
 
-Nothing ships pre-mapped — guessing at what "Business Travel / Ads" or "LOGISTICS"
-means for this business would only put wrong numbers in the return.
+**Business** offers ATO categories, filtered to income or expense by which way
+the money went. The first time you use a category it asks which line in your
+sheets it lands on, and remembers — every later transaction in that category
+fills the line by itself. Reopen one and hit **Change** to point it somewhere else.
 
-The first time you use a tracker line, its tax category is blank and the row
-shows a dashed **Tax category?** badge. Set it once and three things happen: the
-line remembers it, every transaction already on that line takes it, and every
-future transaction on it predicts from it.
+**Neither** covers transfers between your own accounts, drawings, tax and GST
+payments, loan principal. These count for nothing in either output, which is the
+point — a transfer filed as personal spending would inflate your living costs.
 
-Change one transaction afterwards and it stays a one-off — the line keeps its
-mapping, and a button offers to promote the change to the whole line if that is
-what you meant. The **Needs tax** filter in Sort lists everything still waiting.
+### Rules
 
-There is a second, separate memory: descriptions. Once *CANVA…* is on the
-Teachable line, every later Canva row lands there by itself, marked so you can
-spot-check it under **Auto-filled**.
+Each card carries a **Make a rule** box that names the pattern it will match and
+says how many already-loaded rows it will answer too. Ticked by default; untick
+to answer just this one. A rule saves the whole answer — kind, category and line
+— so a matching row in next month's statement arrives already done, marked with a
+dot and listed under the **By rule** filter so you can spot-check.
+
+Descriptions collapse to a key with the digits stripped, so `INVOICE 4501` and
+`INVOICE 4502` match each other.
+
+### Keyboard
+
+`P` `B` `N` answer · type to narrow · `Enter` takes the top match · `1`–`9` take
+one directly · `↑` `↓` move between rows · `R` toggles the rule box · `Backspace`
+clears a row.
 
 ## Import
 
@@ -124,7 +139,8 @@ and does nothing if upstream has not moved.
 Ledger to Return/
 ├── ledger-to-return.html    the app — one self-contained file, and the source of truth
 ├── index.html               BUILT from it; this is what GitHub Pages serves
-├── SETUP.md                 the one-time GitHub and Google Cloud steps
+├── SETUP.md                 the GitHub and Google Cloud configuration
+├── LOG.md                   what changed when, and how to change it again
 ├── build/
 │   ├── make-index.py        ledger-to-return.html -> index.html
 │   ├── make-test-pages.py   builds the two local test pages
@@ -132,7 +148,6 @@ Ledger to Return/
 │   └── rates.json           the current table (also embedded in the html)
 └── test/
     ├── flow.test.mjs        parsing, FX, categorising, tax report, CSV output
-    ├── tracking.test.mjs    two-code tracking and the learn-then-predict mapping
     ├── hosts.test.mjs       both hosts, and moving data from one to the other
     ├── migration.test.mjs   v1 to v2 store migration, book separation, line editor
     ├── persistence.test.mjs chunked storage and reload-from-store
@@ -155,13 +170,14 @@ Everything lives in `ledger-to-return.html`, in this order:
 | `<style>` | design tokens, then components. Light palette on bare `:root`, redefined for dark twice (media query and `[data-theme]`) |
 | `const RATES` | the embedded FX table — regenerate with `build/build-rates.py` |
 | `const CATS` | business tax categories and their ATO schedule labels |
-| `SHEET_SEED` / `seedTracks` | the tracker lines, mirroring the two sheets. No tax mapping here by design |
+| `SHEET_SEED` / `seedTracks` | the tracker lines, mirroring the two sheets; `PERSONAL_BLOCKS` decides which are personal |
+| `normTx` / `normRule` | how older stored shapes migrate to `kind` + `line` + `tax` |
+| `pickPool` / `choose` / `applyRule` | what each answer offers, what it sets, and how a rule carries forward |
 | `parseAmount` / `parseDate` | decimal styles, day-first dates, DR/CR suffixes, bracketed negatives |
 | `merchantKey` | how descriptions collapse for the learning ("SQ \*CANVA PTY LTD SYDNEY" → "CANVA SYDNEY") |
 | `artifactStore` / `driveStore` / `localStore` | the three storage backends behind one interface |
 | `getToken` / `connectDrive` / `renderStorage` | Google sign-in and the storage panel |
 | `migrate` / `persist` / `boot` | the two-book state; the artifact store chunks 120 transactions per document |
-| `setTax` / `applyLineTax` / `learnTax` | the learn-then-predict tax mapping |
 | `gridData` / `gridTable` / `gridColumnBlocks` | the monthly actuals grid and its copy runs |
 | `reportData` / `renderTaxReport` | totals, flags, schedule roll-up |
 | `txCsv` / `summaryCsv` / `gridCsv` | the exports |
@@ -209,7 +225,7 @@ creates a second artifact instead of updating this one.
 - Each transaction gets **one** tracker line. Where GIA money also rolls into the
   Budget Tracker's "GIA" row, that stays a formula in the sheet — the app does not
   post the same money to two lines.
-- Tracker lines are editable in Import → Tracker lines: rename, remap, add, remove.
+- Tracker lines are editable in Import → Tracker lines: rename, add, remove.
   The seed mirrors both sheets as they read on 1 September 2026, and the client
   rows in particular get renamed every year. A line in use can't be removed;
   renaming one keeps everything coded to it.
