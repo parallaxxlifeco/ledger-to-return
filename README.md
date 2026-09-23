@@ -73,6 +73,18 @@ and GST payments, loan principal, capital in. They count for nothing in either
 output, which is the point: a tax instalment filed as personal spending would
 inflate your living costs.
 
+### One answer, both sheets
+
+GIA Finance Tracking holds the detail and the Budget Tracker holds the same money
+as roll-up lines, so a line can carry a second line it also posts to. Coding a
+transaction to VENUE puts it on VENUE *and* on the Budget Tracker's GIA expense
+line; ADMIN / ASSISTANT goes to VA Admin instead. The mapping was derived from
+May 2026, where every figure reconciled to the cent, and the middle column of
+Import → Tracker lines changes any of it.
+
+A line posts at most one hop — its own cell and one other — so nothing can chain
+or double back.
+
 ### Rules
 
 Each card carries a **Make a rule** box that names the pattern it will match and
@@ -156,6 +168,7 @@ Ledger to Return/
 │   └── rates.json           the current table (also embedded in the html)
 └── test/
     ├── flow.test.mjs        parsing, FX, categorising, tax report, CSV output
+    ├── rollup.test.mjs      both sheets against his real May 2026 figures
     ├── hosts.test.mjs       both hosts, and moving data from one to the other
     ├── migration.test.mjs   v1 to v2 store migration, book separation, line editor
     ├── persistence.test.mjs chunked storage and reload-from-store
@@ -181,6 +194,7 @@ Everything lives in `ledger-to-return.html`, in this order:
 | `SHEET_SEED` / `seedTracks` | the tracker lines, mirroring the two sheets; `PERSONAL_BLOCKS` decides which are personal |
 | `normTx` / `normRule` | how older stored shapes migrate to `kind` + `line` + `tax` |
 | `pickPool` / `choose` / `applyRule` | what each answer offers, what it sets, and how a rule carries forward |
+| `lineKey` / `resolveLine` / `ROLLUP_SEED` / `rollTarget` | line identity including direction, upgrading old keys, and the cross-sheet roll-up |
 | `parseAmount` / `parseDate` | decimal styles, day-first dates, DR/CR suffixes, bracketed negatives |
 | `merchantKey` | how descriptions collapse for the learning ("SQ \*CANVA PTY LTD SYDNEY" → "CANVA SYDNEY") |
 | `artifactStore` / `driveStore` / `localStore` | the three storage backends behind one interface |
@@ -230,9 +244,9 @@ creates a second artifact instead of updating this one.
 
 ## Notes and limits
 
-- Each transaction gets **one** tracker line. Where GIA money also rolls into the
-  Budget Tracker's "GIA" row, that stays a formula in the sheet — the app does not
-  post the same money to two lines.
+- Each transaction gets one tracker line, which may also post to one line on the
+  other sheet. That is the only duplication, it is one hop deep, and it mirrors how
+  the two sheets already relate.
 - Tracker lines are editable in Import → Tracker lines: rename, add, remove.
   The seed mirrors both sheets as they read on 1 September 2026, and the client
   rows in particular get renamed every year. A line in use can't be removed;

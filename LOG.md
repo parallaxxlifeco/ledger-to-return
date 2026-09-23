@@ -4,6 +4,40 @@ What was built, when, and what you'd need to know to change it. Newest first.
 
 ---
 
+## 23 September 2026 — Both sheets from one pass
+
+Daniel: "the GIA sheet and the personal finances needs to happen at the same
+time." His May 2026 column says why. The same money sits on both sheets — GIA
+Finance Tracking holds the detail, the Budget Tracker holds it as roll-up lines —
+and it reconciles to the cent:
+
+| GIA Finance Tracking, May | | Budget Tracker, May |
+|---|---|---|
+| Tickets 1,401.16 + Speakers 1,238.49 | → | GIA income 2,639.65 |
+| VENUE 492.62 + EDITING 1,299.00 + LOGISTICS 424.59 | → | GIA expense 2,216.21 |
+| ADMIN / ASSISTANT 108.43 | → | **VA Admin** 108.43 |
+| Reconnected Man 453.83 | → | Reconnected Man 453.83 |
+| Founders Breakfast 296.93 in / 47.28 out | → | same lines |
+
+So a line now carries `rollsTo`: the line on the other sheet it also posts to.
+`gridData` adds the amount to its own cell and, where one is set, to the target's.
+One hop only, and a line never rolls into itself. `ROLLUP_SEED` holds the mapping
+above; the middle column of the tracker-line editor changes any of it.
+`test/rollup.test.mjs` reproduces May and checks both grids against these figures.
+
+**A bug this exposed.** Line keys were `sheet:block:name` and ignored direction,
+so a block holding an income *and* an expense line of the same name collapsed them
+into one. Three lines were unreachable: GIA and Founders Breakfast in
+TRANSFORMATIONS, Founders Breakfast in CIRCLES — exactly the lines the roll-up
+needs. Keys are now `sheet:block:direction:name`. `resolveLine` upgrades a stored
+old key using the transaction's sign, and `normRule` does the same using the tax
+category's direction, so nothing coded earlier is lost.
+
+Software sits on both sheets by name but belongs to the Budget Tracker only, so
+GIA's software lines roll nowhere.
+
+---
+
 ## 23 September 2026 — Transfers in one press
 
 Wise to CommBank, an account to the Mastercard: common, meaningless, and it was

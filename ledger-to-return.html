@@ -269,7 +269,7 @@ tr.subtotal td:first-child{background:var(--raise)}
   cursor:pointer;padding:2px 5px;border-radius:4px;
 }
 .monthbtn:hover{background:var(--accentsoft);color:var(--accent)}
-.lineedit{display:grid;grid-template-columns:120px minmax(0,1fr) minmax(0,1.2fr) auto;gap:8px;align-items:center;padding:5px 0;border-bottom:1px solid var(--linesoft)}
+.lineedit{display:grid;grid-template-columns:110px minmax(0,1fr) minmax(0,1.4fr) auto;gap:8px;align-items:center;padding:5px 0;border-bottom:1px solid var(--linesoft)}
 .lineedit input,.lineedit select{padding:5px 8px;font-size:12.5px}
 .lineedit .gname{font-size:11px;color:var(--ink3);font-family:"IBM Plex Mono",monospace;overflow:hidden;text-overflow:ellipsis}
 @media (max-width:760px){.lineedit{grid-template-columns:1fr;gap:5px}}
@@ -778,22 +778,70 @@ const SHEET_SEED=[
 ];
 const SHEET_NAME={gia:"GIA Finance Tracking",budget:"Budget Tracker"};
 const slug=s=>String(s).toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"");
+/* A line's identity is sheet + block + direction + name. The direction matters:
+   TRANSFORMATIONS has a GIA income line and a GIA expense line, and CIRCLES has
+   Founders Breakfast twice. Leaving it out collapsed them into one. */
+const lineKey=(sheet,group,kind,label)=>sheet+":"+slug(group)+":"+kind+":"+slug(label);
+
+/* Where a GIA line also posts in the Budget Tracker. Derived from May 2026,
+   where every figure reconciled to the cent:
+     Tickets + Speakers                  -> GIA income
+     VENUE + EDITING + LOGISTICS         -> GIA expense
+     ADMIN / ASSISTANT                   -> VA Admin
+     Reconnected Man, Founders Breakfast -> their own lines
+   Software sits in the Budget Tracker only, so GIA's software lines roll nowhere. */
+const ROLLUP_SEED={
+  "gia:give-it-all:income:tickets":              "budget:transformations:income:gia",
+  "gia:give-it-all:income:speakers":             "budget:transformations:income:gia",
+  "gia:give-it-all:income:partners":             "budget:transformations:income:gia",
+  "gia:circles:income:reconnected-man":          "budget:transformations:income:reconnected-man",
+  "gia:circles:income:founders-breakfast":       "budget:transformations:income:founders-breakfast",
+  "gia:give-it-all:expense:venue":               "budget:transformations:expense:gia",
+  "gia:give-it-all:expense:editing":             "budget:transformations:expense:gia",
+  "gia:give-it-all:expense:logistics":           "budget:transformations:expense:gia",
+  "gia:give-it-all:expense:admin-assistant":     "budget:transformations:expense:va-admin",
+  "gia:circles:expense:founders-breakfast":      "budget:transformations:expense:founders-breakfast",
+};
 function seedTracks(){
   const out=[];
-  for(const sh of SHEET_SEED) for(const grp of sh.groups) for(const [label] of grp.lines)
-    out.push({key:sh.id+":"+slug(grp.g)+":"+slug(label),sheet:sh.id,group:grp.g,label,
-              kind:grp.kind, scope:PERSONAL_BLOCKS.has(grp.g)?"personal":"business"});
+  for(const sh of SHEET_SEED) for(const grp of sh.groups) for(const [label] of grp.lines){
+    const key=lineKey(sh.id,grp.g,grp.kind,label);
+    out.push({key,sheet:sh.id,group:grp.g,label,kind:grp.kind,
+              scope:PERSONAL_BLOCKS.has(grp.g)?"personal":"business",
+              rollsTo:ROLLUP_SEED[key]||null});
+  }
   return out;
 }
 /* Live list, replaced from storage on boot. */
 let TRACKS=seedTracks();
 let TRK={};
+let TRK_LEGACY={};
 function indexTracks(){
-  TRK={};
+  TRK={}; TRK_LEGACY={};
   for(const t of TRACKS){
     if(!t.scope) t.scope=PERSONAL_BLOCKS.has(t.group)?"personal":"business";
+    if(t.rollsTo===undefined) t.rollsTo=ROLLUP_SEED[t.key]||null;
     TRK[t.key]=t;
+    /* Keys used to leave the direction out. Keep a lookup from the old shape so
+       stored transactions still resolve — the amount's sign picks the right one
+       where a name exists in both directions. */
+    const old=t.sheet+":"+slug(t.group)+":"+slug(t.label);
+    (TRK_LEGACY[old]=TRK_LEGACY[old]||{})[t.kind]=t.key;
   }
+}
+/* Resolve a stored line key, upgrading an old one using the transaction's sign. */
+function resolveLine(key,amt){
+  if(!key||TRK[key]) return key||null;
+  const alt=TRK_LEGACY[key];
+  if(!alt) return null;
+  const want=(amt>=0)?"income":"expense";
+  return alt[want]||alt.income||alt.expense||null;
+}
+/* One hop only — a line posts to its own cell and, at most, to one other. */
+function rollTarget(key){
+  const t=TRK[key];
+  if(!t||!t.rollsTo||t.rollsTo===key) return null;
+  return TRK[t.rollsTo]?t.rollsTo:null;
 }
 const linesFor=scope=>TRACKS.filter(t=>t.scope===scope);
 const lineLabel=k=>{const t=TRK[k];return t?t.label:"";};
@@ -847,11 +895,16 @@ function normRule(r){
   if(r.k||r.l!==undefined&&r.t!==undefined&&!r.c){
     let k=r.k||null;
     if(k==="exclude"&&r.t==="x_transfer") k="transfer";
-    return {k,l:r.l||null,t:r.t||null};
+    /* Direction comes from the tax category, which is what tells an income line
+       apart from an expense line of the same name. */
+    const dir=(r.t&&CAT[r.t]&&CAT[r.t].kind==="income")?1:-1;
+    return {k,l:r.l?resolveLine(r.l,dir):null,t:r.t||null};
   }
   if(r.c){
-    const line=TRK[r.c];
-    if(line) return {k:line.scope==="personal"?"personal":"business",l:r.c,t:r.t||(line.scope==="personal"?"x_personal":null)};
+    const dir=(r.t&&CAT[r.t]&&CAT[r.t].kind==="income")?1:-1;
+    const key=TRK[r.c]?r.c:resolveLine(r.c,dir);
+    const line=TRK[key];
+    if(line) return {k:line.scope==="personal"?"personal":"business",l:key,t:r.t||(line.scope==="personal"?"x_personal":null)};
     if(r.t==="x_transfer") return {k:"transfer",l:null,t:"x_transfer"};
     return {k:null,l:null,t:r.t||null};
   }
@@ -862,6 +915,7 @@ function normRule(r){
 function normTx(t,track){
   if(!track) return t;
   if(!t.line&&t.cat){ t.line=t.cat; }
+  if(t.line) t.line=resolveLine(t.line,t.amt);
   if(!t.kind){
     /* The line decides, because a personal row legitimately carries an
        "exclude" tax category — personal spending never reaches the return.
@@ -1841,10 +1895,17 @@ function gridData(sheetId,year){
     const key=lineOf(t);
     if(!key){ continue; }                       // excluded rows feed no sheet
     const line=TRK[key];
-    if(!line||line.sheet!==sheetId) continue;
+    if(!line) continue;
+    const roll=rollTarget(key);
+    const onThis = line.sheet===sheetId;
+    const rollsHere = roll && TRK[roll].sheet===sheetId;
+    if(!onThis&&!rollsHere) continue;
     if(+t.date.slice(0,4)!==year){ otherYear++; continue; }
     const m=+t.date.slice(5,7)-1;
-    (cells[key]=cells[key]||Array(12).fill(0))[m]+=Math.abs(e.aud);
+    /* The same money shows on its own line and, where one is set, on the line it
+       rolls into — which is how the two sheets actually relate. */
+    if(onThis)    (cells[key]=cells[key]||Array(12).fill(0))[m]+=Math.abs(e.aud);
+    if(rollsHere) (cells[roll]=cells[roll]||Array(12).fill(0))[m]+=Math.abs(e.aud);
   }
   const groups=[];
   for(const l of lines){
@@ -2202,31 +2263,44 @@ function renderTracks(){
   const catToLine={};
   for(const k in S.lineFor) catToLine[S.lineFor[k]]=(catToLine[S.lineFor[k]]||[]).concat(k);
   let html="";
+  const bizLines=linesFor("business");
   for(const g of trackGroups()){
     const scope=g.items[0]?g.items[0].scope:"business";
-    html+=`<div class="lbl" style="margin:16px 0 4px">${esc(SHEET_NAME[g.sheet])} · ${esc(g.group)} <span style="opacity:.6">${scope}</span></div>`;
+    html+=`<div class="lbl" style="margin:16px 0 4px">${esc(SHEET_NAME[g.sheet])} · ${esc(g.group)} <span style="opacity:.6">${g.kind} · ${scope}</span></div>`;
     for(const it of g.items){
       const feeds=(catToLine[it.key]||[]).map(k=>CAT[k]?CAT[k].label:"").filter(Boolean);
+      const targets=bizLines.filter(l=>l.key!==it.key&&l.kind===it.kind&&l.sheet!==it.sheet);
+      const roll=scope==="business"&&targets.length
+        ? `<select data-f="roll"><option value="">— rolls nowhere —</option>${
+            targets.map(l=>`<option value="${esc(l.key)}"${l.key===it.rollsTo?" selected":""}>${esc(SHEET_NAME[l.sheet])} · ${esc(l.group)} · ${esc(l.label)}</option>`).join("")}</select>`
+        : `<span class="hint" style="margin:0">${scope==="personal"?"personal":"—"}</span>`;
       html+=`<div class="lineedit" data-k="${esc(it.key)}">
         <span class="gname">${esc(it.group)}</span>
         <input type="text" data-f="label" value="${esc(it.label)}">
-        <span class="hint" style="margin:0">${feeds.length?esc(feeds.join(", ")):(scope==="personal"?"personal":"—")}</span>
+        ${roll}
         <button class="btn sm danger" data-rm="${esc(it.key)}"${used[it.key]?" disabled title=\"In use by "+used[it.key]+" transactions\"":""}>Remove</button>
       </div>`;
     }
   }
-  const mapped=Object.keys(S.lineFor).length;
-  $("#tracksBody").innerHTML=html+`<p class="hint" style="margin-top:14px">${TRACKS.length} lines. ${mapped} tax categor${mapped===1?"y":"ies"} know which line they land on — set on first use, and changed by reopening a transaction and clicking Change. A line in use can't be removed; renaming one keeps everything coded to it.</p>`;
+  const rolls=TRACKS.filter(t=>t.rollsTo&&TRK[t.rollsTo]).length;
+  $("#tracksBody").innerHTML=html+`<p class="hint" style="margin-top:14px">${TRACKS.length} lines. ${rolls} also post to a line on the other sheet — the middle column — so one answer fills both grids. A line in use can't be removed; renaming one keeps everything coded to it.</p>`;
   $$("#tracksBody .lineedit").forEach(row=>{
     const key=row.dataset.k;
     row.querySelector('[data-f="label"]').addEventListener("change",e=>{
       const t=TRK[key]; if(!t) return;
       t.label=e.target.value.trim()||t.label; S.tracks=TRACKS; markDirty(); renderTracks(); renderList();
     });
+    const rl=row.querySelector('[data-f="roll"]');
+    if(rl) rl.addEventListener("change",e=>{
+      const t=TRK[key]; if(!t) return;
+      t.rollsTo=e.target.value||null; S.tracks=TRACKS; markDirty(); renderTracks();
+    });
   });
   $$("#tracksBody [data-rm]").forEach(b=>b.addEventListener("click",()=>{
     const k=b.dataset.rm;
-    TRACKS=TRACKS.filter(t=>t.key!==k); indexTracks(); S.tracks=TRACKS;
+    TRACKS=TRACKS.filter(t=>t.key!==k);
+    for(const t of TRACKS) if(t.rollsTo===k) t.rollsTo=null;
+    indexTracks(); S.tracks=TRACKS;
     for(const c in S.lineFor) if(S.lineFor[c]===k) delete S.lineFor[c];
     markDirty(); renderTracks(); renderList(); toast("Line removed");
   }));
@@ -2241,10 +2315,10 @@ function addLine(){
   const label=prompt("Line name, exactly as it reads in the sheet:");
   if(!label||!label.trim()) return;
   const kind=confirm("Is this an income line?\n\nOK = income, Cancel = expense")?"income":"expense";
-  let key=sheet+":"+slug(group)+":"+slug(label);
+  let key=lineKey(sheet,group,kind,label);
   if(TRK[key]) key+="-"+Math.random().toString(36).slice(2,6);
   TRACKS.push({key,sheet,group:group.trim(),label:label.trim(),kind,
-               scope:PERSONAL_BLOCKS.has(group.trim())?"personal":"business"});
+               scope:PERSONAL_BLOCKS.has(group.trim())?"personal":"business",rollsTo:null});
   indexTracks(); S.tracks=TRACKS; markDirty(); renderTracks(); renderAll();
   toast(`Added “${label.trim()}”`);
 }
