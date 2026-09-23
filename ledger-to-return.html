@@ -13,6 +13,8 @@
   --crit:#9C3729; --critsoft:#F8E6E2;
   --shadow:0 1px 2px rgba(16,30,38,.06),0 8px 24px -12px rgba(16,30,38,.18);
   --r:7px;
+  --cat1:#2a78d6; --cat2:#eb6834; --cat3:#1baf7a; --cat4:#eda100;
+  --cat5:#e87ba4; --cat6:#008300; --cat7:#4a3aa7; --cat8:#e34948; --cat0:#75858F;
   color-scheme:light;
 }
 @media (prefers-color-scheme:dark){
@@ -25,6 +27,8 @@
     --warn:#D9A441; --warnsoft:#32270F;
     --crit:#E28471; --critsoft:#391C16;
     --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px -12px rgba(0,0,0,.7);
+    --cat1:#3987e5; --cat2:#d95926; --cat3:#199e70; --cat4:#c98500;
+    --cat5:#d55181; --cat6:#008300; --cat7:#9085e9; --cat8:#e66767; --cat0:#76858F;
     color-scheme:dark;
   }
 }
@@ -37,6 +41,8 @@
   --warn:#D9A441; --warnsoft:#32270F;
   --crit:#E28471; --critsoft:#391C16;
   --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px -12px rgba(0,0,0,.7);
+  --cat1:#3987e5; --cat2:#d95926; --cat3:#199e70; --cat4:#c98500;
+  --cat5:#d55181; --cat6:#008300; --cat7:#9085e9; --cat8:#e66767; --cat0:#76858F;
   color-scheme:dark;
 }
 *{box-sizing:border-box}
@@ -186,6 +192,12 @@ em.chip-kind.k-business{background:var(--accentsoft);color:var(--accent)}
 em.chip-kind.k-exclude{background:transparent;color:var(--ink3);border:1px dashed var(--line)}
 em.chip-kind.k-transfer{background:transparent;color:var(--ink3);border:1px dashed var(--line)}
 em.chip-cat{background:var(--surface2);color:var(--ink2)}
+/* the same block colour, so a sorted list reads at a glance */
+em.chip-cat[style*="--g"],em.chip-line[style*="--g"]{
+  background:color-mix(in srgb,var(--g) 15%,transparent);
+  border:1px solid color-mix(in srgb,var(--g) 38%,transparent);color:var(--ink2)
+}
+tr.grouprow td{border-left:3px solid var(--g,transparent)}
 em.chip-cat.k-income{background:var(--incomesoft);color:var(--income)}
 em.chip-cat.k-exclude{background:transparent;color:var(--ink3);border:1px dashed var(--line)}
 em.chip-line{background:transparent;color:var(--ink3);border:1px solid var(--linesoft);font-weight:500}
@@ -213,16 +225,29 @@ em.chip-none{background:var(--warnsoft);color:var(--warn);font-style:normal;font
 .pickbox{display:flex;flex-direction:column;gap:7px}
 .pickbox input{font-size:13px}
 .pickmenu{
-  max-height:246px;overflow-y:auto;border:1px solid var(--linesoft);border-radius:7px;
+  max-height:360px;overflow-y:auto;border:1px solid var(--linesoft);border-radius:7px;
   display:flex;flex-direction:column;background:var(--raise);
 }
+/* Colour carries the block a line belongs to, so a long list can be scanned
+   rather than read. It is never the only cue: every option still shows its
+   block in the heading above it and in the note on the right. The eight hues
+   and their dark steps are validated for colour-blind separation against this
+   page's own surfaces — see LOG.md before changing any of them. */
 .pickopt{
-  display:flex;align-items:center;gap:9px;padding:7px 10px;border:0;background:transparent;cursor:pointer;
+  display:flex;align-items:center;gap:9px;padding:7px 10px 7px 8px;border:0;background:transparent;cursor:pointer;
   text-align:left;font-size:12.5px;border-bottom:1px solid var(--linesoft);
+  border-left:3px solid var(--g,var(--cat0));
 }
 .pickopt:last-child{border-bottom:0}
 .pickopt:hover{background:var(--surface2)}
-.pickopt.sel{background:var(--accentsoft)}
+.pickopt.sel{background:color-mix(in srgb,var(--g,var(--accent)) 13%,transparent)}
+.pickhead{
+  position:sticky;top:0;z-index:1;display:flex;align-items:center;gap:7px;
+  padding:5px 10px 5px 8px;background:var(--surface2);border-bottom:1px solid var(--linesoft);
+  border-left:3px solid var(--g,var(--cat0));
+  font-size:10px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--ink2);
+}
+.pickhead .n{margin-left:auto;font-weight:500;letter-spacing:0;color:var(--ink3);text-transform:none}
 .pickopt kbd{
   font-family:"IBM Plex Mono",monospace;font-size:10px;min-width:17px;height:17px;display:grid;place-items:center;
   border:1px solid var(--line);border-radius:3px;color:var(--ink3);background:var(--surface);flex:none;
@@ -830,6 +855,7 @@ function indexTracks(){
     const old=t.sheet+":"+slug(t.group)+":"+slug(t.label);
     (TRK_LEGACY[old]=TRK_LEGACY[old]||{})[t.kind]=t.key;
   }
+  rebuildGroupSlots();          // a block added or renamed keeps its own colour
 }
 /* Resolve a stored line key, upgrading an old one using the transaction's sign. */
 function resolveLine(key,amt){
@@ -846,6 +872,28 @@ function rollTarget(key){
   return TRK[t.rollsTo]?t.rollsTo:null;
 }
 const linesFor=scope=>TRACKS.filter(t=>t.scope===scope);
+
+/* ---- one colour per block ----
+   A pick list is forty near-identical rows, which is slow to read and easy to
+   mis-click. Each block gets a colour so the eye can jump to the right part of
+   the list, with the block name still printed above it and beside it — colour
+   is the shortcut, never the only cue.
+
+   Slots are handed out in the order the blocks appear ON SCREEN, and that
+   matters: the eight hues are validated as a sequence, so neighbours in the
+   list are the pairs proven to stay apart for red-green and blue-yellow colour
+   blindness. Re-ordering them quietly breaks that. The three lists never mix,
+   so each starts again at slot 1. */
+let GROUP_SLOT={};
+function rebuildGroupSlots(){
+  GROUP_SLOT={};
+  const number=names=>names.forEach((g,i)=>{ if(!(g in GROUP_SLOT)) GROUP_SLOT[g]=(i%8)+1; });
+  number(CATS.map(c=>c.g));                                     // the ATO categories
+  number([...new Set(linesFor("personal").map(l=>l.group))]);   // his personal blocks
+  number([...new Set(linesFor("business").map(l=>l.group))]);   // and the business ones
+}
+const slotOf=g=>GROUP_SLOT[g]||0;
+const gvar=g=>"--g:var(--cat"+slotOf(g)+")";
 const lineLabel=k=>{const t=TRK[k];return t?t.label:"";};
 const lineWhere=k=>{const t=TRK[k];return t?SHEET_NAME[t.sheet]+" · "+t.group:"";};
 indexTracks();
@@ -1688,24 +1736,49 @@ function currentTx(){ return B().tx.find(t=>t.id===curId)||null; }
 
 /* ---------- what the dropdown offers, given the answer so far ---------- */
 function pickPool(t){
-  if(!isTrack()) return CATLIST.map(c=>({key:c.key,label:c.label,note:c.group,hay:c.label+" "+c.group+" "+c.ato}));
+  if(!isTrack()) return CATLIST.map(c=>({key:c.key,label:c.label,g:c.group,note:c.ato,hay:c.label+" "+c.group+" "+c.ato}));
   if(pickMode==="line"){
-    return linesFor("business").map(l=>({key:l.key,label:l.label,note:lineWhere(l.key),
+    return linesFor("business").map(l=>({key:l.key,label:l.label,g:l.group,note:SHEET_NAME[l.sheet],
       hay:l.label+" "+l.group+" "+SHEET_NAME[l.sheet]}));
   }
   if(t.kind==="personal"){
-    return linesFor("personal").map(l=>({key:l.key,label:l.label,note:l.group,hay:l.label+" "+l.group}));
+    return linesFor("personal").map(l=>({key:l.key,label:l.label,g:l.group,note:"",hay:l.label+" "+l.group}));
   }
   if(t.kind==="exclude"){
-    return EXCLUDE_CATS.filter(k=>CAT[k]).map(k=>({key:k,label:CAT[k].label,note:"",hay:CAT[k].label}));
+    return EXCLUDE_CATS.filter(k=>CAT[k]).map(k=>({key:k,label:CAT[k].label,g:CAT[k].group,note:"",hay:CAT[k].label}));
   }
   if(t.kind==="transfer") return [];
   if(t.kind==="business"){
     const want=t.amt>=0?"income":"expense";
-    return CATLIST.filter(c=>c.kind===want).map(c=>({key:c.key,label:c.label,note:c.group,
+    return CATLIST.filter(c=>c.kind===want).map(c=>({key:c.key,label:c.label,g:c.group,note:c.ato,
       hay:c.label+" "+c.group+" "+c.ato}));
   }
   return [];
+}
+
+/* The list is drawn in blocks with a heading over each, so it can be scanned by
+   shape instead of read line by line. Filtering keeps the headings, minus the
+   blocks that have nothing left in them. The 1-9 shortcuts still count across
+   the whole list, headings included or not, so the number beside a row is
+   always the key that picks it. */
+function pickMenu(hits,sel){
+  if(!hits.length) return `<div class="hint" style="padding:10px 8px">Nothing matches. Try a shorter word.</div>`;
+  const shown=hits.slice(0,80);
+  let html="",lastG=null;
+  shown.forEach((o,i)=>{
+    if(o.g&&o.g!==lastG){
+      lastG=o.g;
+      const n=shown.filter(x=>x.g===o.g).length;
+      html+=`<div class="pickhead" style="${gvar(o.g)}">${esc(o.g)}<span class="n">${n}</span></div>`;
+    }
+    html+=`<button class="pickopt${i===sel?" sel":""}" data-pick="${esc(o.key)}" style="${gvar(o.g||"")}">
+      ${i<9?`<kbd>${i+1}</kbd>`:`<kbd class="ghost">·</kbd>`}
+      <span class="nm">${esc(o.label)}</span>
+      ${o.note?`<span class="note">${esc(o.note)}</span>`:""}
+    </button>`;
+  });
+  if(hits.length>shown.length) html+=`<div class="hint" style="padding:8px">${hits.length-shown.length} more — keep typing.</div>`;
+  return html;
 }
 function pickHits(t){
   const pool=pickPool(t);
@@ -1758,9 +1831,10 @@ function chips(t){
   const out=[];
   if(t.kind) out.push(`<em class="chip-kind k-${t.kind}">${esc((KINDS.find(k=>k.k===t.kind)||{label:t.kind}).label)}</em>`);
   if(t.kind==="transfer") return out.join("");
-  if(t.kind==="business"&&t.tax&&CAT[t.tax]) out.push(`<em class="chip-cat">${esc(CAT[t.tax].label)}</em>`);
-  if(t.kind==="exclude"&&t.tax&&CAT[t.tax]) out.push(`<em class="chip-cat">${esc(CAT[t.tax].label)}</em>`);
-  if(t.line&&TRK[t.line]) out.push(`<em class="chip-line" title="${esc(lineWhere(t.line))}">${esc(lineLabel(t.line))}</em>`);
+  if(t.tax&&CAT[t.tax]&&(t.kind==="business"||t.kind==="exclude"))
+    out.push(`<em class="chip-cat" style="${gvar(CAT[t.tax].group)}" title="${esc(CAT[t.tax].group)}">${esc(CAT[t.tax].label)}</em>`);
+  if(t.line&&TRK[t.line])
+    out.push(`<em class="chip-line" style="${gvar(TRK[t.line].group)}" title="${esc(lineWhere(t.line))}">${esc(lineLabel(t.line))}</em>`);
   if(t.auto) out.push(`<span class="dot" title="Filled in by a rule"></span>`);
   return out.join("");
 }
@@ -1795,13 +1869,7 @@ function activeCard(t){
     body+=`<div class="pickbox">
       <div class="lbl">${pickPrompt(t)}</div>
       <input type="text" id="pickInput" value="${esc(pickQ)}" placeholder="Type to narrow…" autocomplete="off">
-      <div class="pickmenu">${hits.length?hits.slice(0,60).map((o,i)=>
-        `<button class="pickopt${i===pickSel?" sel":""}" data-pick="${esc(o.key)}">
-           ${i<9?`<kbd>${i+1}</kbd>`:`<kbd class="ghost">·</kbd>`}
-           <span class="nm">${esc(o.label)}</span>
-           ${o.note?`<span class="note">${esc(o.note)}</span>`:""}
-         </button>`).join("")
-        :`<div class="hint" style="padding:10px 8px">Nothing matches. Try a shorter word.</div>`}</div>
+      <div class="pickmenu">${pickMenu(hits,pickSel)}</div>
     </div>`;
   }else if(isTrack()&&t.kind==="business"&&t.line){
     body+=`<div class="settledrow">
@@ -2102,7 +2170,7 @@ function gridTable(sheetId,year){
     g.items.forEach(it=>it.months.forEach((v,i)=>sums[i]+=v));
     const gt=sums.reduce((a,b)=>a+b,0);
     if(hideEmpty&&!shown.length) return "";
-    return `<tr class="grouprow"><td colspan="14">${esc(g.group)} <span style="color:var(--ink3);font-weight:400">${g.kind}</span></td></tr>${rows}
+    return `<tr class="grouprow" style="${gvar(g.group)}"><td colspan="14">${esc(g.group)} <span style="color:var(--ink3);font-weight:400">${g.kind}</span></td></tr>${rows}
       <tr class="subtotal"><td>Total</td>${sums.map(v=>`<td class="r mono">${v?fmtAUD0(v):"·"}</td>`).join("")}<td class="r mono">${gt?fmtAUD0(gt):"·"}</td></tr>`;
   }).join("");
   return {html:`<div class="tablewrap"><table class="grid">${head}<tbody>${body||`<tr><td colspan="14" class="hint">Nothing coded to this sheet for ${year} yet.</td></tr>`}</tbody></table></div>`,d,hidden};

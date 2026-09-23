@@ -99,7 +99,37 @@ console.log(`\n  TRANSFORMATIONS expense from GIA lines: ${totalExpense.toFixed(
 console.log('  (his May total was 3371.10 including 1154.89 of Budget-Tracker-only lines:');
 console.log(`   3371.10 - 1154.89 = ${(3371.10 - 1154.89).toFixed(2)})`);
 
-console.log(bad ? `\n${bad} FIGURE(S) WRONG` : '\nevery figure matches his sheet');
+/* Colour is a shortcut for the eye, not a code to learn: every block keeps one
+   slot, the slots are the validated sequence, and no two blocks in the same
+   list share one. */
+const colour = await p.evaluate(() => {
+  const lists = {
+    ato: [...new Set(CATS.map(c => c.g))],
+    personal: [...new Set(linesFor('personal').map(l => l.group))],
+    business: [...new Set(linesFor('business').map(l => l.group))],
+  };
+  const out = {};
+  for (const [k, groups] of Object.entries(lists)) {
+    out[k] = {groups: groups.length, slots: groups.map(slotOf)};
+  }
+  out.stable = slotOf('LIVING') === slotOf('LIVING');
+  out.unknown = slotOf('NOT A REAL BLOCK');
+  return out;
+});
+console.log('\nBLOCK COLOURS:');
+let cbad = 0;
+for (const [list, {groups, slots}] of Object.entries(colour)) {
+  if (!slots) continue;
+  const distinct = new Set(slots).size === slots.length;
+  const inRange = slots.every(s => s >= 1 && s <= 8);
+  const sequential = slots.every((s, i) => s === (i % 8) + 1);
+  if (!(distinct && inRange && sequential)) cbad++;
+  console.log(`  ${distinct && inRange && sequential ? 'OK  ' : 'BAD '} ${list}: ${groups} blocks -> slots ${slots.join(',')}`);
+}
+if (colour.unknown !== 0) { cbad++; console.log('  BAD  an unknown block should fall back to neutral, got', colour.unknown); }
+else console.log('  OK   an unknown block falls back to neutral');
+
+console.log(bad + cbad ? `\n${bad + cbad} CHECK(S) WRONG` : '\nevery figure matches his sheet');
 
 /* The combined export is the file the Google Sheet is built from: every line
    from both sheets, once each, whether or not anything landed on it. */

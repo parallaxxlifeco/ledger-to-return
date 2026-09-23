@@ -4,6 +4,53 @@ What was built, when, and what you'd need to know to change it. Newest first.
 
 ---
 
+## 23 September 2026 — A colour per block
+
+Daniel, sorting his first real statement: "selecting from the lists is really
+slow and hard going because they all look the same." Forty near-identical rows,
+each with a small grey note on the right, is slow to read and easy to mis-click.
+
+The list is now drawn in blocks, each with a sticky heading carrying the block
+name and how many lines it holds, and each row carrying a 3px rail in that
+block's colour. The note on the right changed from the block name (now redundant,
+it's the heading) to the **ATO schedule label**, which is the thing you actually
+want to see beside a category. The menu is taller too — 360px instead of 246 —
+so his personal list is nearly one screenful rather than three.
+
+The same colour follows the block everywhere: the chips on a sorted row, and the
+group rows in the monthly grid. So a scanned list shows shape before it shows
+words.
+
+**On the colours themselves — do not re-pick these by eye.** They are eight hues
+with separate steps for dark mode, and both sets were run through a
+colour-blindness validator against this page's own surfaces (`--raise`, #FBFCFC
+light and #1B2429 dark):
+
+| | light | dark |
+|---|---|---|
+| worst adjacent pair, colour-blind ΔE | 9.1 | 8.4 |
+| worst adjacent pair, normal vision ΔE | 19.6 | 19.3 |
+
+Both clear their floors (8 and 15). **The order matters as much as the values**:
+only *adjacent* pairs were validated, because adjacent is what a list puts next
+to each other. `rebuildGroupSlots` in `part_c2b.js` hands out slots in the order
+blocks appear on screen, which is what keeps that true. A semantic re-order was
+tried first — income green, travel orange and so on — and failed both modes
+outright (magenta beside orange came out at ΔE 11.6 for normal vision, 1.6 for
+deuteranopia). Legibility won.
+
+Three light-mode hues sit under 3:1 contrast on the surface, which the method
+allows only with "relief" — the identity must also be carried by something that
+isn't colour. It is: every block prints its name in the heading above the row,
+and the chosen category prints its name on the chip. Colour is the shortcut, not
+the code.
+
+Blocks the app doesn't know fall back to neutral grey rather than borrowing a
+colour, and `rollup.test.mjs` asserts the slots are distinct, in range, and in
+sequence for all three lists.
+
+---
+
 ## 23 September 2026 — Statements, read from the PDF
 
 Daniel: NetBank's CSV export is capped at a row count, so it drops transactions
