@@ -272,6 +272,8 @@ em.chip-none{background:var(--warnsoft);color:var(--warn);font-style:normal;font
 }
 .pickopt.sel .nm{font-weight:600;color:var(--ink)}
 .pickopt.sel kbd{border-color:color-mix(in srgb,var(--tint) 55%,var(--line));color:var(--ink2)}
+.pickgrp{display:flex;flex-direction:column}
+.pickgrp:last-child .pickopt:last-child{border-bottom:0}
 .pickhead{
   --tint:var(--g,var(--cat0));
   position:sticky;top:0;z-index:1;display:flex;align-items:center;gap:7px;
@@ -2076,11 +2078,15 @@ function pickMenu(hits,sel){
   if(!hits.length) return `<div class="hint" style="padding:10px 8px">Nothing matches. Try a shorter word.</div>`;
   const shown=hits.slice(0,80);
   let html="",lastG=null;
+  /* Each block sits in its own box, so its heading sticks only while its rows
+     are on screen and is pushed off by the next one — rather than the headings
+     piling up at the top as you scroll. */
   shown.forEach((o,i)=>{
     if(o.g&&o.g!==lastG){
+      if(lastG!==null) html+=`</div>`;
       lastG=o.g;
       const n=shown.filter(x=>x.g===o.g).length;
-      html+=`<div class="pickhead" style="${gvar(o.g)}">${esc(o.g)}<span class="n">${n}</span></div>`;
+      html+=`<div class="pickgrp"><div class="pickhead" style="${gvar(o.g)}">${esc(o.g)}<span class="n">${n}</span></div>`;
     }
     html+=`<button class="pickopt${i===sel?" sel":""}" data-pick="${esc(o.key)}" style="${gvar(o.g||"")}">
       ${i<9?`<kbd>${i+1}</kbd>`:`<kbd class="ghost">·</kbd>`}
@@ -2088,6 +2094,7 @@ function pickMenu(hits,sel){
       ${o.note?`<span class="note">${esc(o.note)}</span>`:""}
     </button>`;
   });
+  if(lastG!==null) html+=`</div>`;
   if(hits.length>shown.length) html+=`<div class="hint" style="padding:8px">${hits.length-shown.length} more — keep typing.</div>`;
   return html;
 }
@@ -2101,7 +2108,12 @@ function pickHits(t){
 function pickPrompt(t){
   if(!isTrack()) return t.amt>=0?"Which kind of income?":"Which expense category?";
   if(pickMode==="line") return dirOf(t)==="income"?"Which income line in your sheets?":"Which expense line in your sheets?";
-  if(t.kind==="personal") return "Which line in your Budget Tracker?";
+  /* Your personal blocks are all spending lines, so money in is only ever
+     something coming back — say so, rather than leave it looking like a
+     mistake. */
+  if(t.kind==="personal") return t.amt>=0
+    ? "Money in — which spending line does it come off? (a repayment, a split bill, a refund)"
+    : "Which line in your Budget Tracker?";
   if(t.kind==="exclude")  return "What is it?";
   return t.amt>=0?"Which kind of income?":"Which expense category, for the return?";
 }
@@ -2552,8 +2564,14 @@ function gridData(sheetId,year){
     const m=+t.date.slice(5,7)-1;
     /* The same money shows on its own line and, where one is set, on the line it
        rolls into — which is how the two sheets actually relate. */
-    if(onThis)    (cells[key]=cells[key]||Array(12).fill(0))[m]+=Math.abs(e.aud);
-    if(rollsHere) (cells[roll]=cells[roll]||Array(12).fill(0))[m]+=Math.abs(e.aud);
+    /* Signed by which way the line runs, not by Math.abs. Spending shows as a
+       positive figure on an expense line, so money coming back — a friend
+       paying their half of dinner, a refund — has to come off it. Taking the
+       absolute value added a $75.84 repayment on to Restaurants as if it were
+       more spending. Same rule for an income line the other way round. */
+    const onLine=(k)=>TRK[k]&&TRK[k].kind==="expense"?-e.aud:e.aud;
+    if(onThis)    (cells[key]=cells[key]||Array(12).fill(0))[m]+=onLine(key);
+    if(rollsHere) (cells[roll]=cells[roll]||Array(12).fill(0))[m]+=onLine(roll);
   }
   const groups=[];
   for(const l of lines){

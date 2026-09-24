@@ -45,6 +45,34 @@ minute.
 
 ---
 
+## 24 September 2026 — Money back comes off, not on
+
+"This is coming in as personal income but wants a line in the personal
+expenses?" — $50 USD in from a friend, marked Personal.
+
+That part is by design: every block in his Budget Tracker's personal side is a
+spending line, so money coming in on the personal side can only be something
+coming back — a split bill, a repayment, a refund — and belongs on the line of
+whatever it repaid. The prompt now says so for a positive personal amount:
+*"Money in — which spending line does it come off?"*
+
+**But checking what that would do found a real bug.** `gridData` added
+`Math.abs(e.aud)` to every cell, so a $60 repayment on a $120 dinner showed
+**$180** of restaurant spending, not $60. The $59.70 Tokopedia refund would have
+done the same on whatever line it went to. Cells are now signed by the line's
+direction — spending positive on an expense line, so money back subtracts; the
+reverse on an income line. Ordinary rows are unchanged, which is why the roll-up
+test against his May figures still passes to the cent.
+
+Also fixed in passing: the block headings in the pick list piled up at the top
+as you scrolled (SELF-CARE and LIFESTYLE both pinned at once). Each block now
+sits in its own box, so its heading sticks only while its rows are on screen and
+the next one pushes it off.
+
+`direction.test.mjs`: a $60 repayment on a $120 dinner leaves $60 in September.
+
+---
+
 ## 24 September 2026 — One merchant, not twenty
 
 An Amazon payout, coded as business income: "should align to Amazon on the

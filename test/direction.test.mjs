@@ -141,6 +141,23 @@ check('a retired line in a saved file is dropped', pruned.unusedGone);
 check('unless a transaction is coded to it', pruned.usedKept);
 check('and it goes once that transaction is gone', !pruned.left);
 
+/* --- money back on a spending line comes OFF it --- */
+console.log('\nMONEY BACK ON A SPENDING LINE:');
+const back = await p.evaluate(() => {
+  S.book = 'track'; B().rules = {};
+  const rest = linesFor('personal').find(l => l.label === 'Restaurants');
+  B().tx = [
+    normTx({id: 'dinner', date: '2025-09-20', desc: 'Warung', amt: -120, cur: 'AUD', acct: 'a', mk: 'WARUNG', kind: 'personal', tax: 'x_personal', line: rest.key}),
+    normTx({id: 'half', date: '2025-09-21', desc: 'Richard', amt: 60, cur: 'AUD', acct: 'a', mk: 'RICHARD', kind: 'personal', tax: 'x_personal', line: rest.key}),
+  ];
+  renderAll(); go('sort');
+  const row = gridData('budget', 2025).groups.flatMap(g => g.items).find(it => it.line.key === rest.key);
+  curId = 'half'; setKind('personal');
+  return {sept: row.months[8], prompt: pickPrompt(currentTx())};
+});
+check('a $60 repayment on a $120 dinner leaves $60 of spending, not $180', back.sept === 60, `September Restaurants = ${back.sept}`);
+check('and the screen says what money in on a personal line means', /come off/i.test(back.prompt), back.prompt);
+
 console.log(bad ? `\n${bad} CHECK(S) FAILED` : '\ndirection is respected everywhere');
 console.log('PAGE ERRORS:', errs.length ? errs : 'none');
 await b.close();
