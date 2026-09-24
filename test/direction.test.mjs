@@ -101,7 +101,7 @@ const retired = await p.evaluate(() => {
   return {
     giaExpense: gia.filter(l => l.kind === 'expense' && l.group === 'GIVE IT ALL').map(l => l.label),
     giaCircles: gia.filter(l => l.group === 'CIRCLES').map(l => l.kind + '/' + l.label),
-    budSoftware: bud.filter(l => names.includes(l.label)).map(l => l.label),
+    budSoftware: bud.filter(l => names.includes(l.label) && l.label !== 'Facebook').map(l => l.label),
     hasRegularSubs: bud.some(l => l.label === 'Regular Subcriptions'),
     budKeeps: bud.map(l => l.label),
     total: TRACKS.length,
@@ -114,6 +114,11 @@ check('CIRCLES is untouched — it carries real figures and feeds the roll-up',
   retired.giaCircles.length === 3, retired.giaCircles.join(', '));
 check('the Budget Tracker software lines are gone', retired.budSoftware.length === 0, retired.budSoftware.join(', '));
 check('Regular Subcriptions is still there to fold them into', retired.hasRegularSubs, retired.budKeeps.join(', '));
+/* Facebook is ad spend, not a tool you subscribe to, so it keeps its own line
+   and must survive the prune that took the other eight. */
+check('Facebook keeps its own line on the Budget Tracker',
+  retired.budKeeps.includes('Facebook'), retired.budKeeps.join(', '));
+check('but not on the GIA sheet', !retired.giaExpense.includes('Facebook'), retired.giaExpense.join(', '));
 
 /* a saved file still carrying a retired line: dropped, unless it is in use */
 const pruned = await p.evaluate(() => {

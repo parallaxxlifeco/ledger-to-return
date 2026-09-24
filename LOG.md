@@ -4,6 +4,34 @@ What was built, when, and what you'd need to know to change it. Newest first.
 
 ---
 
+## 24 September 2026 — Facebook is not a subscription
+
+"All of these are subscriptions that can be folded into regular subscriptions.
+Apart from Facebook - that is will be its own."
+
+Facebook came back as its own line on the Budget Tracker, and had to be taken
+out of `RETIRED_LINES` as well as put back in the seed — otherwise
+`pruneRetired` would have deleted it again on the next load, which is exactly
+the kind of half-revert that looks like the change never saved.
+
+The reasoning is worth keeping: the other eight are tools you subscribe to, and
+what any one of them costs in a month is not a decision — Regular Subcriptions
+is the answer for all of them. Facebook is ad spend. It moves, it is worth
+seeing on its own, and it is the line you would look at to ask whether it earned
+anything. Folding it away would have lost that.
+
+Still off the GIA sheet: subscriptions and ads are a Budget Tracker matter.
+
+`direction.test.mjs` asserts both halves — Facebook survives the prune on the
+Budget Tracker, and does not come back on GIA.
+
+**Third time a change looked missing because the browser was serving a cached
+page.** GitHub Pages sets long cache headers, so an ordinary reload after a
+deploy often shows the old build. Worth adding a visible build stamp so it can
+be told apart at a glance rather than by counting list items.
+
+---
+
 ## 24 September 2026 — The keyboard legend goes
 
 "This line can be removed - its not necessary." It was the row under the filter
