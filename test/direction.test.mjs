@@ -158,6 +158,35 @@ const back = await p.evaluate(() => {
 check('a $60 repayment on a $120 dinner leaves $60 of spending, not $180', back.sept === 60, `September Restaurants = ${back.sept}`);
 check('and the screen says what money in on a personal line means', /come off/i.test(back.prompt), back.prompt);
 
+/* --- personal money in that doesn't need recording anywhere --- */
+console.log('\nPERSONAL MONEY IN, NOT RECORDED:');
+const gift = await p.evaluate(() => {
+  S.book = 'track'; B().rules = {};
+  B().tx = [
+    normTx({id: 'in', date: '2025-09-21', desc: 'Richard Leenheer', amt: 50, cur: 'USD', acct: 'Wise', mk: 'RICHARD LEENHEER'}),
+    normTx({id: 'in2', date: '2025-10-02', desc: 'Richard Leenheer', amt: 20, cur: 'USD', acct: 'Wise', mk: 'RICHARD LEENHEER'}),
+    normTx({id: 'out', date: '2025-10-05', desc: 'Richard Leenheer', amt: -30, cur: 'USD', acct: 'Wise', mk: 'RICHARD LEENHEER'}),
+  ];
+  renderAll(); go('sort');
+  curId = 'in'; setKind('personal');
+  const first = pickPool(currentTx())[0];
+  ruleOn = true; renderList();
+  choose('x_personal_in');
+  const t = id => B().tx.find(x => x.id === id);
+  const inGrid = gridData('budget', 2025).groups.flatMap(g => g.items).some(it => it.months.some(v => v));
+  curId = 'out'; setKind('personal');
+  const outPool = pickPool(currentTx()).map(o => o.key);
+  return {first: first && first.label, settled: settled(t('in')), kind: t('in').kind, line: t('in').line,
+          sibling: settled(t('in2')), outTouched: !!(t('out').tax && t('out').tax !== 'x_personal'), inGrid,
+          offeredOnSpend: outPool.includes('x_personal_in')};
+});
+check('money in on the personal side offers "Not recorded" first', gift.first === 'Not recorded', gift.first);
+check('choosing it settles the row with no sheet line', gift.settled && gift.kind === 'exclude' && !gift.line, `${gift.kind} / ${gift.line}`);
+check('nothing lands in the monthly grid', !gift.inGrid);
+check('a rule on it catches his next transfer in', gift.sibling);
+check('but never a payment going to him', !gift.outTouched);
+check('and it is not offered on spending at all', !gift.offeredOnSpend);
+
 console.log(bad ? `\n${bad} CHECK(S) FAILED` : '\ndirection is respected everywhere');
 console.log('PAGE ERRORS:', errs.length ? errs : 'none');
 await b.close();

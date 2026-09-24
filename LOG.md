@@ -45,6 +45,31 @@ minute.
 
 ---
 
+## 24 September 2026 — Personal money in, not recorded
+
+"I need an income line that doesn't need to be recorded on personal — this is
+not required for personal income."
+
+Money arriving on the personal side — a friend sending money, a gift — usually
+belongs on neither sheet and not on the return. Transfer would have kept it out,
+but it means "my own money moving", and a list of those should stay honest.
+
+**Personal money in — not recorded** (`x_personal_in`) is a new excluded
+category, offered as key **1** at the top of the personal list whenever the
+amount is positive, and not at all when it is negative. Choosing it settles the
+row as excluded with no sheet line: off both grids, off the return.
+
+It carries `dir:"income"`, which `ruleDir` now reads first. Excluded categories
+normally go either way, but this one only describes money coming in, so a rule
+made with it — "everything from Richard is not recorded" — never touches a
+payment going *to* him.
+
+`direction.test.mjs` covers it: offered first on money in, settles with no line,
+nothing in the grid, a rule catches his next transfer in, a payment to him is
+left alone, and it is not offered on spending.
+
+---
+
 ## 24 September 2026 — Money back comes off, not on
 
 "This is coming in as personal income but wants a line in the personal

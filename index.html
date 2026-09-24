@@ -670,6 +670,11 @@ const CATS=[
  ]},
  {g:"Not a business item",k:"exclude",items:[
   ["x_personal","Personal spending","—"],
+  /* Money in on the personal side that belongs nowhere — a friend sending money,
+     a gift, a repayment you don't want netted off a line. Off both sheets and
+     off the return. It only ever describes money coming IN, so a rule made with
+     it never touches a payment going the other way. */
+  ["x_personal_in","Personal money in — not recorded","—",{dir:"income"}],
   ["x_drawings","Owner's drawings","—"],
   ["x_transfer","Transfer between own accounts","—"],
   ["x_tax","Income tax & ATO payments","—"],
@@ -2070,9 +2075,14 @@ function pickPool(t){
     const want=dirOf(t);
     const pool=linesFor("personal");
     const same=pool.filter(l=>l.kind===want);
-    /* His personal blocks are all expense lines, so a refund would otherwise
-       find nothing. Better the whole list than an empty one. */
-    return (same.length?same:pool).map(l=>({key:l.key,label:l.label,g:l.group,note:"",hay:l.label+" "+l.group}));
+    /* His personal blocks are all expense lines, so money in either comes off
+       one of them, or — the usual case — does not need recording at all. That
+       choice goes first, as key 1. */
+    const lines=(same.length?same:pool).map(l=>({key:l.key,label:l.label,g:l.group,note:"",hay:l.label+" "+l.group}));
+    if(t.amt>=0&&CAT.x_personal_in) lines.unshift({key:"x_personal_in",label:"Not recorded",
+      g:"PERSONAL MONEY IN",note:"off both sheets and the return",
+      hay:"not recorded personal money in gift friend income ignore skip"});
+    return lines;
   }
   if(t.kind==="exclude"){
     return EXCLUDE_CATS.filter(k=>CAT[k]).map(k=>({key:k,label:CAT[k].label,g:CAT[k].group,note:"",hay:CAT[k].label}));
@@ -2129,7 +2139,7 @@ function pickPrompt(t){
      something coming back — say so, rather than leave it looking like a
      mistake. */
   if(t.kind==="personal") return t.amt>=0
-    ? "Money in — which spending line does it come off? (a repayment, a split bill, a refund)"
+    ? "Money in — not recorded, or which spending line does it come off?"
     : "Which line in your Budget Tracker?";
   if(t.kind==="exclude")  return "What is it?";
   return t.amt>=0?"Which kind of income?":"Which expense category, for the return?";
@@ -2324,6 +2334,11 @@ function choose(key){
     applyRule(t,{k:t.kind,l:t.line,t:t.tax});
     advance(nextId); return;
   }
+  if(t.kind==="personal"&&key==="x_personal_in"){
+    t.kind="exclude"; t.tax=key; t.line=null; t.auto=false;
+    applyRule(t,{k:"exclude",l:null,t:key});
+    advance(nextId); return;
+  }
   if(t.kind==="personal"){
     if(!TRK[key]) return;
     t.line=key; t.tax="x_personal"; t.auto=false;
@@ -2356,6 +2371,7 @@ function choose(key){
 /* Which way a rule's answer runs, so it is only handed to rows going the same
    way. A refund from a merchant you usually pay is not the same transaction. */
 function ruleDir(rule){
+  if(rule.t&&CAT[rule.t]&&CAT[rule.t].dir) return CAT[rule.t].dir;
   if(rule.t&&CAT[rule.t]&&CAT[rule.t].kind!=="exclude") return CAT[rule.t].kind;
   if(rule.l&&TRK[rule.l]) return TRK[rule.l].kind;
   return null;                                  // transfers and the excluded go either way
