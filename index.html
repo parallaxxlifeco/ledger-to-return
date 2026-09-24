@@ -737,10 +737,25 @@ function parseDelimited(text,delim){
 
 /* ------- amounts ------- */
 const ZERO_DP=new Set(['IDR','JPY','KRW','VND','CLP','ISK']);
+/* Money carries at most a currency mark and a CR/DR suffix. Anything else with
+   letters in it is a reference, not an amount — and that matters because the
+   parser strips every letter before reading the number, which turned a Wise ID
+   ("CARD_TRANSACTION-3985259590") into minus three billion and made that column
+   look more numeric than the real one. */
+function looksLikeMoney(v){
+  const bare=String(v)
+    .replace(/\((.*)\)/,"-$1")
+    .replace(/\b(CR|DR)\b/ig,"")
+    .replace(/\b[A-Z]{3}\b/g,"")          // an ISO code sitting beside the figure
+    .replace(/[\u0024\u00A2-\u00A5\u20A0-\u20BF]/g,"")
+    .replace(/\bRp\b|\bkr\b|\bR\$/ig,"");
+  return !/[A-Za-z_]/.test(bare);
+}
 function parseAmount(s,style,cur){
   if(s==null) return null;
   let t=String(s).trim();
   if(!t) return null;
+  if(!looksLikeMoney(t)) return null;
   let neg=false;
   if(/^\(.*\)$/.test(t)){neg=true;t=t.slice(1,-1);}
   if(/(^|\s)(DR|D)$/i.test(t)&&!/CR/i.test(t)){neg=true;}
@@ -1216,6 +1231,76 @@ function statementCsv(rows){
   return L.join("\n");
 }
 
+/* ---- Wise transfer history (CSV) ----
+   Wise's export is not a statement and does not have a column you can just read
+   as the amount. Every row is a transfer with two sides:
+
+     Direction  OUT / IN / NEUTRAL
+     Source ...  what left (for OUT, his balance)
+     Target ...  what arrived (for IN, his balance)
+
+   So the sign comes from Direction, the figure from whichever side is his, and
+   the fee is a separate column that has to be added back — "Source amount
+   (after fees)" is the amount after the fee was taken out, and the fee is money
+   he spent too. Left alone, the importer picked the ID column, because stripping
+   the letters out of "TRANSFER-2205480566" leaves something that reads as a
+   number. */
+const WISE_COLS=["Direction","Source amount (after fees)","Source currency",
+                 "Target amount (after fees)","Target currency","Created on"];
+const isWiseCsv=headers=>WISE_COLS.every(c=>headers.includes(c));
+
+function wiseRows(headers,body){
+  const at=n=>headers.indexOf(n);
+  const I={dir:at("Direction"),status:at("Status"),made:at("Created on"),id:at("ID"),
+           sAmt:at("Source amount (after fees)"),sCur:at("Source currency"),
+           sFee:at("Source fee amount"),sFeeCur:at("Source fee currency"),sName:at("Source name"),
+           tAmt:at("Target amount (after fees)"),tCur:at("Target currency"),
+           tFee:at("Target fee amount"),tName:at("Target name"),rate:at("Exchange rate")};
+  const num=v=>{const n=parseFloat(String(v==null?"":v).replace(/,/g,""));return isFinite(n)?n:0;};
+  const rows=[],skipped={refunded:0,cancelled:0,zero:0};
+  let conversions=0,feeTotal={};
+  for(const r of body){
+    const st=(r[I.status]||"").toUpperCase();
+    /* A refunded transfer was undone. Counting it spends the money twice. */
+    if(st==="REFUNDED"){ skipped.refunded++; continue; }
+    if(st==="CANCELLED"||st==="FAILED"){ skipped.cancelled++; continue; }
+    const dir=(r[I.dir]||"").toUpperCase();
+    const date=String(r[I.made]||"").slice(0,10);
+    let amt,cur,desc;
+    if(dir==="IN"){
+      amt=num(r[I.tAmt])-num(r[I.tFee]);      // what actually landed
+      cur=r[I.tCur]; desc=r[I.sName]||"Money in";
+    }else{
+      /* OUT, and NEUTRAL — his own money moving between his own balances, which
+         is a transfer he can press T on, not something to guess at. */
+      amt=-(num(r[I.sAmt])+num(r[I.sFee]));
+      cur=r[I.sCur];
+      desc=dir==="NEUTRAL"
+        ? `Wise balance conversion ${r[I.sCur]||"?"} to ${r[I.tCur]||"?"}`
+        : (r[I.tName]||"Money out");
+    }
+    if(!date||!cur||!isFinite(amt)){ skipped.zero++; continue; }
+    if(Math.abs(amt)<0.005){ skipped.zero++; continue; }
+    if((r[I.sCur]||"")!==(r[I.tCur]||"")) conversions++;
+    const fee=num(r[I.sFee]);
+    if(fee) feeTotal[r[I.sFeeCur]||cur]=Math.round(((feeTotal[r[I.sFeeCur]||cur]||0)+fee)*100)/100;
+    rows.push({date,desc:String(desc).trim(),amt,cur:String(cur).trim().toUpperCase()});
+  }
+  rows.sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:0);
+  return {rows,skipped,conversions,feeTotal,
+          currencies:[...new Set(rows.map(r=>r.cur))].sort()};
+}
+
+/* Back out as the delimited text the importer already knows how to read, one
+   row per line with the sign already applied. The currency stays per row —
+   a Wise export spans every balance you hold, so one currency for the file
+   would be wrong. */
+function wiseCsvText(rows){
+  const L=[["Date","Description","Currency","Amount"].map(csvq).join(",")];
+  for(const r of rows) L.push([r.date,r.desc,r.cur,r.amt.toFixed(2)].map(csvq).join(","));
+  return L.join("\n");
+}
+
 /* ========================== STATE ==========================
    Two books share the import engine and the rate table but nothing else.
      tax   - the FY 2025-26 return. One code per transaction: a tax category.
@@ -1450,8 +1535,22 @@ function doParse(){
     const nums=rows[i].filter(c=>parseAmount(c)!==null&&/\d/.test(c)).length;
     if(nums<=rows[i].length/2){ hIdx=i; break; }
   }
-  const headers=rows[hIdx].map((h,i)=>h||("Column "+(i+1)));
-  const body=rows.slice(hIdx+1).filter(r=>r.length>1);
+  let headers=rows[hIdx].map((h,i)=>h||("Column "+(i+1)));
+  let body=rows.slice(hIdx+1).filter(r=>r.length>1);
+
+  /* A Wise export is not a statement — no column in it is the amount. Rewrite it
+     into one that is, before anything tries to guess. */
+  if(isWiseCsv(headers)){
+    const w=wiseRows(headers,body);
+    if(w.rows.length){
+      const text=wiseCsvText(w.rows);
+      const re=parseDelimited(text,",");
+      headers=re[0]; body=re.slice(1);
+      showWiseNote(w);
+      if(!$("#impAcct").value.trim())
+        $("#impAcct").value=w.currencies.length===1?"Wise "+w.currencies[0]:"Wise";
+    }
+  }
   PARSED={headers,body,delim};
   const map={
     date:guessCol(headers,GUESS.date), desc:guessCol(headers,GUESS.desc),
@@ -2930,6 +3029,31 @@ async function takeStatements(files){
   st.textContent="";
   showStatementReport(reports,failed,all.length);
   doParse();
+}
+
+/* Wise hands back more than it looks like: several currencies at once, transfers
+   that were later refunded, and conversions between his own balances. Say so,
+   because none of it is visible in a list of rows. */
+function showWiseNote(w){
+  const box=$("#pdfNote");
+  const fees=Object.entries(w.feeTotal).map(([c,v])=>fmtCur(v,c)).join(" · ");
+  const skipped=w.skipped.refunded+w.skipped.cancelled+w.skipped.zero;
+  box.innerHTML=`
+    <div class="flagbox ok"><div>
+      <div class="ft">${w.rows.length} rows read from a Wise export</div>
+      <div class="fd">Wise has no amount column — every row is a transfer with two sides, so the
+      direction gives the sign and the figure comes from whichever side is yours. Fees are added
+      back on, because that is money you spent too.</div>
+    </div></div>
+    <p class="hint" style="margin-top:9px">
+      ${w.currencies.length>1?`<b>${w.currencies.join(", ")}</b> — each row keeps its own currency and is converted at the ECB rate for its own date.<br>`:""}
+      ${w.conversions?`${w.conversions} row${w.conversions===1?"":"s"} changed currency inside Wise.<br>`:""}
+      ${fees?`Fees included: ${esc(fees)}.<br>`:""}
+      ${w.skipped.refunded?`<b>${w.skipped.refunded} refunded transfer${w.skipped.refunded===1?"":"s"} left out</b> — they were undone, so counting them would spend the money twice.<br>`:""}
+      ${w.skipped.cancelled?`${w.skipped.cancelled} cancelled or failed left out.<br>`:""}
+      ${w.skipped.zero?`${w.skipped.zero} zero-value row${w.skipped.zero===1?"":"s"} left out.`:""}
+    </p>`;
+  box.style.display="";
 }
 
 /* What the statement says about itself, against what was read out of it. This

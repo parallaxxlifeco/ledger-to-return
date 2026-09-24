@@ -45,6 +45,57 @@ minute.
 
 ---
 
+## 24 September 2026 — Wise has no amount column
+
+The first Wise import came in at minus two and a half billion dollars.
+
+**Two faults, one behind the other.**
+
+`parseAmount` stripped every letter before reading the number, so
+`CARD_TRANSACTION-3985259590` became −3,985,259,590 and `TRANSFER-2205480566`
+became −2,205,480,566. The ID column then scored as the most numeric column in
+the file and was chosen as the amount. Money carries at most a currency mark and
+a CR/DR suffix, so `looksLikeMoney` now rejects anything else with letters in
+it, before the stripping happens. That fault was general — any export with an
+alphanumeric reference would have hit it.
+
+Underneath: **a Wise export is not a statement.** There is no column you can read
+as the amount. Every row is a transfer with two sides —
+
+    Direction   OUT / IN / NEUTRAL
+    Source ...  what left    (for OUT, his balance)
+    Target ...  what arrived (for IN, his balance)
+
+so the sign comes from `Direction`, the figure from whichever side is his, and
+the fee is its own column that has to be added back: "Source amount (after
+fees)" is what remained *after* the fee was taken, and the fee is money spent
+too. `wiseRows()` rewrites the export into columns the importer already reads.
+
+Decisions worth keeping:
+
+- **Refunded transfers are left out.** Six in his file, five of them failed
+  USD→IDR conversions. They were undone; counting them spends the money twice.
+  The import says how many and why.
+- **NEUTRAL rows are balance conversions between his own balances.** Named
+  "Wise balance conversion AUD to USD" so he can press T, rather than the app
+  guessing — which he ruled out for transfer pairs already.
+- **Currency stays per row.** One export spans every balance held: his had IDR,
+  USD, AUD, EUR and THB in a single file, 70 rows of which changed currency
+  mid-transfer. A single currency for the file would have been wrong.
+
+**The conversion itself was verified against the source, not just tested.** The
+127 rows were re-converted independently from the ECB reference file, and every
+one of the **102 distinct date+currency pairs matched to the cent** — including
+the weekend carry-forward (3 Aug 2025, a Sunday, correctly using Friday 1 Aug).
+14 rows fell on a non-publishing day. That is the first real evidence the FX
+path works, and it is the reason the whole tool exists.
+
+The fixture is synthetic — invented names and ids, shape copied exactly. Real
+exports name real people and this repository is public, so `.gitignore` blocks
+`test/fixtures/*.csv` with one explicit exception for it.
+
+---
+
 ## 24 September 2026 — Facebook is not a subscription
 
 "All of these are subscriptions that can be folded into regular subscriptions.

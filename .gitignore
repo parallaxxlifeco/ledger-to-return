@@ -16,6 +16,8 @@ ledger-to-return-data.json
 # test/fixtures/README.md says how to put one back locally.
 test/fixtures/*.pdf
 test/fixtures/*.csv
+# except this one: invented names and ids, real shape. The Wise test needs it.
+!test/fixtures/wise-sample.csv
 
 # symlink made by build/make-test-pages.py so build/ can reach ../vendor
 build/vendor

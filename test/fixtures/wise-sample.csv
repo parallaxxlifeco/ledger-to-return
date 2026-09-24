@@ -1,0 +1,8 @@
+ID,Status,Direction,"Created on","Finished on","Source fee amount","Source fee currency","Target fee amount","Target fee currency","Source name","Source amount (after fees)","Source currency","Target name","Target amount (after fees)","Target currency","Exchange rate",Reference,Batch,"Created by",Category,Note
+TRANSFER-1000000001,COMPLETED,OUT,"2025-08-03 09:00:00","2025-08-03 09:00:00",1.63,USD,,,"A Person",215.71,USD,"A Motorcycle Shop",3917650.0,IDR,18162.0,,,"A Person",Shopping,
+TRANSFER-1000000002,COMPLETED,IN,"2025-08-04 09:00:00","2025-08-04 09:00:00",0.00,USD,,,"A Marketplace",627.43,USD,"A Person",627.43,USD,1.0,PAYMENTS,,"A Person","Money added",
+CARD_TRANSACTION-1000000003,COMPLETED,OUT,"2025-08-10 09:00:00","2025-08-10 09:00:00",0.00,IDR,,,"A Person",200000.00,IDR,"A Petrol Station",200000.00,IDR,1.0,,,"A Person",Bills,
+BALANCE_TRANSACTION-1000000004,COMPLETED,NEUTRAL,"2026-04-27 09:00:00","2026-04-27 09:00:00",0.52,AUD,,,"A Person",64.78,AUD,"A Person",46.53,USD,0.718,,,"A Person",,
+TRANSFER-1000000005,REFUNDED,OUT,"2025-10-01 09:00:00","2025-10-01 09:00:00",0.30,USD,,,"A Person",120.11,USD,"A Person",2000000.0,IDR,16651.0,,,"A Person",,
+CARD_TRANSACTION-1000000006,REFUNDED,OUT,"2026-06-29 09:00:00","2026-06-29 09:00:00",,,,,"A Person",0.00,IDR,"A Temporary Hold",0.00,IDR,1,,,"A Person",Shopping,
+TRANSFER-1000000007,COMPLETED,IN,"2025-08-18 09:00:00","2025-08-18 09:00:00",0.00,EUR,,,"A Client",132.94,USD,"A Person",132.94,USD,1.0,,,"A Person","Money added",
