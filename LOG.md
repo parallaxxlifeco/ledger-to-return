@@ -4,6 +4,21 @@ What was built, when, and what you'd need to know to change it. Newest first.
 
 ---
 
+## 24 September 2026 — The keyboard legend goes
+
+"This line can be removed - its not necessary." It was the row under the filter
+chips listing P, B, T, O, Enter, 1–9, arrows, R and Backspace.
+
+Every shortcut it named is already printed on the thing it operates: the letter
+sits on each of the four answer buttons, the number beside each option in the
+list, `r` on the rule box. A permanent line restating them taught nothing after
+the first minute, and it pushed the first transaction further down the screen on
+every single view.
+
+Removed from the markup, the stylesheet and `renderShell`.
+
+---
+
 ## 23 September 2026 — The year a transaction belongs to
 
 Daniel, sorting a June 2025 row: "It stopped asking me the tax line because we

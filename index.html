@@ -180,7 +180,6 @@ tbody tr:last-child td{border-bottom:0}
 .chip{border:0;background:transparent;padding:4px 10px;border-radius:4px;font-size:12px;cursor:pointer;color:var(--ink2);white-space:nowrap}
 .chip[aria-pressed="true"]{background:var(--surface);color:var(--ink);font-weight:600;box-shadow:0 1px 2px rgba(0,0,0,.08)}
 .chip b{font-family:"IBM Plex Mono",monospace;font-size:10.5px;opacity:.65;margin-left:4px;font-weight:500}
-.sorthint{margin:9px 0 0;font-size:11.5px}
 .rows{display:flex;flex-direction:column;gap:6px}
 
 .txcard{
@@ -555,7 +554,6 @@ tr.subtotal td:first-child{background:var(--raise)}
       <div style="flex:1;min-width:150px"><input type="text" id="listSearch" placeholder="Filter descriptions…" style="padding:5px 9px;font-size:12.5px"></div>
       <select id="acctFilter" style="width:auto;padding:5px 9px;font-size:12.5px"></select>
     </div>
-    <p class="hint sorthint" id="sortHint"></p>
     </div>
     <div id="rulesCard" style="display:none"></div>
     <div class="rows" id="rowList"></div>
@@ -2313,9 +2311,10 @@ function renderShell(){
       FY_LIST.map(f=>`<option value="${f.id}"${f.id===S.taxFy?" selected":""}>${f.label}</option>`).join("")}</select>`;
     $("#fyTop").addEventListener("change",e=>{S.taxFy=e.target.value;markDirty();renderAll();});
   }else fyBox.textContent=activeFY().label;
-  $("#sortHint").innerHTML=isTrack()
-    ? `<b style="color:var(--ink2)">P</b> personal · <b style="color:var(--ink2)">B</b> business · <b style="color:var(--ink2)">T</b> transfer, done in one press · <b style="color:var(--ink2)">O</b> other · then type and press <b style="color:var(--ink2)">Enter</b>, or hit <b style="color:var(--ink2)">1–9</b>. <b style="color:var(--ink2)">↑↓</b> move · <b style="color:var(--ink2)">R</b> toggles the rule · <b style="color:var(--ink2)">Backspace</b> clears the row.`
-    : `Type and press <b style="color:var(--ink2)">Enter</b>, or hit <b style="color:var(--ink2)">1–9</b>. <b style="color:var(--ink2)">↑↓</b> move · <b style="color:var(--ink2)">Backspace</b> clears the row.`;
+  /* The keyboard legend used to sit under the filters. Every shortcut it listed
+     is already printed on the thing it works: P/B/T/O on the four buttons, 1-9
+     beside each option, r on the rule box. A permanent line restating them is
+     furniture, and it pushed the first transaction down the screen. */
 }
 function renderAll(){ renderShell(); renderList(); renderAccounts(); renderProgress(); renderTracks(); renderRules(); renderStorage(); }
 
