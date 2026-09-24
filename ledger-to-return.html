@@ -1684,11 +1684,9 @@ function addParsed(){
         rec.kind=rule.k;
         rec.line=rule.l&&TRK[rule.l]?rule.l:null;
         rec.tax=rule.t&&CAT[rule.t]?rule.t:(rule.k==="personal"?"x_personal":null);
-        /* the learned line only if it runs the same way as the category */
-        if(rec.kind==="business"&&!rec.line&&rec.tax&&CAT[rec.tax]){
-          const ln=S.lineFor[rec.tax];
-          if(ln&&TRK[ln]&&TRK[ln].kind===CAT[rec.tax].kind) rec.line=ln;
-        }
+        /* A rule without a line leaves the line to be asked — never filled from
+           the category, which is one line per category and wrong as often as
+           right. */
         if(settled(rec)){ rec.auto=true; auto++; }
       }else if(!isTrack()&&rule.t&&CAT[rule.t]){
         rec.cat=rule.t; rec.auto=true; auto++;
@@ -2050,9 +2048,15 @@ function pickPool(t){
   }
   if(pickMode==="line"){
     const want=dirOf(t);
-    return linesFor("business").filter(l=>l.kind===want)
+    const all=linesFor("business").filter(l=>l.kind===want);
+    const guess=lineGuess(t,want);
+    const rest=all.filter(l=>!guess||l.key!==guess.key)
       .map(l=>({key:l.key,label:l.label,g:l.group,note:SHEET_NAME[l.sheet],
         hay:l.label+" "+l.group+" "+SHEET_NAME[l.sheet]}));
+    if(!guess) return rest;
+    return [{key:guess.key,label:TRK[guess.key].label,g:"SUGGESTED",
+             note:`${TRK[guess.key].group} · ${guess.why}`,
+             hay:TRK[guess.key].label+" "+TRK[guess.key].group}].concat(rest);
   }
   if(t.kind==="personal"){
     const want=dirOf(t);
@@ -2107,6 +2111,21 @@ function pickMenu(hits,sel){
   if(lastG!==null) html+=`</div>`;
   if(hits.length>shown.length) html+=`<div class="hint" style="padding:8px">${hits.length-shown.length} more — keep typing.</div>`;
   return html;
+}
+/* The likeliest sheet line, and why. Who the money went to beats what kind of
+   spend it was: Ivan's last invoice knows more about this one than every other
+   contractor does. */
+function lineGuess(t,want){
+  const ok=k=>k&&TRK[k]&&TRK[k].kind===want&&TRK[k].scope==="business";
+  let best=null;
+  for(const x of B().tx){
+    if(x.id===t.id||x.mk!==t.mk||!ok(x.line)) continue;
+    if(!best||x.date>best.date) best=x;
+  }
+  if(best) return {key:best.line,why:"what this merchant went to last time"};
+  const k=t.tax&&S.lineFor[t.tax];
+  if(ok(k)) return {key:k,why:`last used for ${CAT[t.tax].label}`};
+  return null;
 }
 function pickHits(t){
   const pool=pickPool(t);
@@ -2196,11 +2215,17 @@ function activeCard(t){
        </button>`).join("")}</div>`;
     /* Directly under the four answers, not below the list. It is a decision
        about the answer you are making, and at the bottom of forty options it
-       was out of sight at the moment it mattered. */
-    if(t.kind&&(picking||needLine)&&t.mk){
+       was out of sight at the moment it mattered.
+
+       It shows BEFORE an answer too. Transfer is one press and the row is done,
+       so a box that only appeared after choosing could never be ticked for one —
+       now it is R, then T. Same on a transfer already answered: tick it and
+       press T again. */
+    if(t.mk&&(!t.kind||picking||needLine||t.kind==="transfer")){
+      const what=!t.kind?"gets whichever answer you pick next":"gets this answer";
       body+=`<label class="rulebox${ruleOn?" on":""}">
         <input type="checkbox" id="ruleChk"${ruleOn?" checked":""}>
-        <span><b>Make a rule</b> <kbd>r</kbd> — every “${esc(t.mk)}” from now on${
+        <span><b>Make a rule</b> <kbd>r</kbd> — every “${esc(t.mk)}” ${what} from now on${
           sib?`, and ${sib} already loaded`:""}. Leave it off for a merchant that means different things on different days.</span>
       </label>`;
     }
@@ -2219,7 +2244,7 @@ function activeCard(t){
       <span class="lbl">Sheet line</span>
       <b>${esc(lineLabel(t.line))}</b>
       <span class="hint" style="margin:0">${esc(lineWhere(t.line))}${
-        S.lineFor[t.tax]===t.line?` · learned from the first ${esc(CAT[t.tax].label)}`:""}</span>
+        ""}</span>
       <button class="btn sm" data-relearn="1">Change</button>
     </div>`;
   }
@@ -2337,17 +2362,15 @@ function choose(key){
   if(t.kind==="business"){
     if(!CAT[key]) return;
     t.tax=key; t.auto=false;
-    const known=S.lineFor[key];
-    /* A learned line only applies if it runs the same way as the category. An
-       expense never lands on an income line, however it was once paired. */
-    if(known&&TRK[known]&&TRK[known].kind===CAT[key].kind){
-      t.line=known;
-      applyRule(t,{k:"business",l:known,t:key});
-      advance(nextId);
-    }else{
-      t.line=null; pickMode="line"; pickQ=""; pickSel=0;
-      markDirty(); renderList();                 // stay here and ask for the line
-    }
+    /* The sheet line is always asked for now, with the best guess already
+       selected so Enter takes it. It used to be filled in silently from the
+       first line ever used with that category, which is one line per category —
+       and a category is not a line. Contractors are the video editor on the GIA
+       sheet AND Ivan on TRANSFORMATIONS; Product sales is Amazon US AND Shopify.
+       The silent fill put Ivan on EDITING without a word. A merchant rule still
+       skips the question entirely, because a rule is about who, not what. */
+    t.line=null; pickMode="line"; pickQ=""; pickSel=0;
+    markDirty(); renderList();
   }
 }
 /* Save the rule if asked, and carry it to everything still unsorted that matches. */

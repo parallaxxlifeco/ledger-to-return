@@ -129,6 +129,62 @@ check('and above the list, not below it', place.aboveTheList);
 check('the chip counts them', panel.chip === '1', panel.chip);
 check('the row says what it fills and how much it has touched', /Personal/.test(panel.text) && /filled in/.test(panel.text), panel.text);
 
+/* --- a rule for a transfer: T finishes the row in one press, so the box has to
+   be there to tick BEFORE it --- */
+console.log('\nTRANSFER RULES:');
+const xfer = await p.evaluate(() => {
+  S.book = 'track'; B().rules = {};
+  B().tx = [
+    ['x1', 'Payment Received, Thank You', 673.48], ['x2', 'Payment Received, Thank You', 5252],
+    ['x3', 'Payment Received, Thank You', 3000], ['y1', 'Wise Australia Pty Ltd', -500], ['y2', 'Wise Australia Pty Ltd', -800],
+  ].map(([id, desc, amt]) => normTx({id, date: '2025-07-07', desc, amt, cur: 'AUD', acct: 'card', mk: merchantKey(desc)}));
+  renderAll(); go('sort');
+  curId = 'x1'; renderList();
+  const boxBefore = !!document.querySelector('.txcard.cur .rulebox');
+  ruleOn = true;                            // what pressing r does
+  setKind('transfer');
+  const t = id => B().tx.find(x => x.id === id);
+  const carried = ['x2', 'x3'].every(id => t(id).kind === 'transfer' && t(id).auto);
+  const rules = Object.keys(B().rules);
+  /* without the box ticked, T is still just T */
+  curId = 'y1'; resetPick(); renderList();
+  setKind('transfer');
+  return {boxBefore, carried, rules, noRuleWithoutTick: !B().rules[t('y1').mk], y2: t('y2').kind || null};
+});
+check('the rule box is there before anything is chosen', xfer.boxBefore);
+check('R then T makes a transfer rule', xfer.rules.includes('RECEIVED THANK YOU'), xfer.rules.join(', '));
+check('and the other two card payments become transfers too', xfer.carried);
+check('T on its own still makes no rule', xfer.noRuleWithoutTick && xfer.y2 === null, `y2 left as ${xfer.y2}`);
+
+/* --- the sheet line is always asked; a category is not a line --- */
+console.log('\nSHEET LINE IS ALWAYS ASKED:');
+const guess = await p.evaluate(() => {
+  S.book = 'track'; B().rules = {}; S.lineFor = {};
+  const L = n => linesFor('business').find(l => l.label === n && l.kind === 'expense').key;
+  const contractors = CATLIST.find(c => c.label === 'Contractors & freelancers').key;
+  B().tx = [
+    ['ed1', 'Upwork Editor', -80], ['iv1', 'Ivan Hristov', -500], ['iv2', 'Ivan Hristov', -500], ['ed2', 'Upwork Editor', -90],
+  ].map(([id, desc, amt], i) => normTx({id, date: '2025-08-0' + (i + 1), desc, amt, cur: 'AUD', acct: 'a', mk: merchantKey(desc)}));
+  renderAll(); go('sort');
+  const answer = (id, line) => { curId = id; setKind('business'); choose(contractors); choose(line); };
+  answer('ed1', L('EDITING'));                         // contractors -> EDITING, first time
+  answer('iv1', L('Ivan - Socials'));                  // contractors -> Ivan, for Ivan
+  /* second Ivan: category chosen, and it must STOP and ask, guessing Ivan */
+  curId = 'iv2'; setKind('business'); choose(contractors);
+  const ivanAsked = pickMode === 'line' && !currentTx().line;
+  const ivanGuess = pickPool(currentTx())[0];
+  /* second editor: guesses EDITING from the editor's own history, not Ivan's */
+  choose(L('Ivan - Socials'));
+  curId = 'ed2'; setKind('business'); choose(contractors);
+  const edGuess = pickPool(currentTx())[0];
+  return {ivanAsked, ivan: ivanGuess && [TRK[ivanGuess.key].label, ivanGuess.g],
+          ed: edGuess && TRK[edGuess.key].label, preselected: pickSel === 0};
+});
+check('a category no longer files the line silently', guess.ivanAsked);
+check('the guess for Ivan is Ivan - Socials, from his last invoice', guess.ivan && guess.ivan[0] === 'Ivan - Socials' && guess.ivan[1] === 'SUGGESTED', JSON.stringify(guess.ivan));
+check('the guess for the editor is still EDITING — merchant beats category', guess.ed === 'EDITING', guess.ed);
+check('the guess is already selected, so Enter takes it', guess.preselected);
+
 console.log(bad ? `\n${bad} CHECK(S) FAILED` : '\nrules behave');
 console.log('PAGE ERRORS:', errs.length ? errs : 'none');
 await b.close();

@@ -45,6 +45,48 @@ minute.
 
 ---
 
+## 24 September 2026 — A category is not a line
+
+Two reports inside a minute, same cause:
+
+- "I marked Ivan contractor and it placed it under GIA — this is a Parallaxx
+  Transformations contractor."
+- "I sent Amazon income to Other, but it didn't give me an option … not all
+  other income will be for Amazon."
+
+The sheet line was filled **silently** from `S.lineFor[category]` — the first
+line ever used with that category. That is one line per category, and a
+category is not a line: Contractors & freelancers is the video editor on the GIA
+sheet *and* Ivan on TRANSFORMATIONS; Other business income is Amazon *and*
+everything else. So Ivan landed on EDITING and the next odd receipt would have
+landed on Amazon, with nothing on screen to say so.
+
+**The line is now always asked**, with a best guess already selected, so it is
+one extra Enter rather than a silent misfile. The guess prefers **who** over
+**what**: the line this merchant went to last time, and only then the line last
+used for the category. Ivan's second invoice suggests Ivan - Socials; the
+editor's suggests EDITING. The suggestion sits at the top under SUGGESTED with
+the reason beside it. A merchant rule still skips the question entirely,
+because a rule is about who.
+
+The same silent fill ran at import for a rule that carried a category but no
+line — also removed. Such a row now arrives asking for its line.
+
+**Rows already filed this way are not marked** — a silent fill set `auto:false`
+like a real answer — so they cannot be found automatically; they have to be
+checked by eye (Sorted, filter by the category's usual merchants).
+
+**Also this turn: a rule for Transfer.** T finishes a row in one press, so a
+rule box that only appeared *after* an answer could never be ticked for one. It
+now shows before an answer, too: **R**, then **T**. Also on a transfer already
+answered — tick it and press T again.
+
+`rules.test.mjs`: R-then-T makes the rule and carries it to the other card
+payments; T alone makes none; the line is asked every time; Ivan's guess is Ivan
+and the editor's is EDITING; the guess is preselected.
+
+---
+
 ## 24 September 2026 — Personal money in, not recorded
 
 "I need an income line that doesn't need to be recorded on personal — this is
