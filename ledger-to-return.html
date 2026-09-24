@@ -591,6 +591,10 @@ const CATS=[
   ["inc_coach","Coaching & client fees","Other business income"],
   ["inc_event","Event & ticket sales","Other business income"],
   ["inc_program","Course & program sales","Other business income"],
+  /* Parallaxx sells goods — Amazon and Shopify payouts. Without this they had to
+     go under Other business income, which then learned its way onto the Amazon
+     line and took every other miscellaneous receipt with it. */
+  ["inc_product","Product sales","Other business income"],
   ["inc_speak","Speaking & facilitation fees","Other business income"],
   ["inc_affil","Affiliate & commission income","Other business income"],
   ["inc_sponsor","Sponsorship income","Other business income"],
@@ -685,9 +689,20 @@ function hashId(s){let h=2166136261;for(let i=0;i<s.length;i++){h^=s.charCodeAt(
 
 /* description -> merchant key for the learned rules */
 const NOISE=new Set(["THE","AND","PTY","LTD","LIMITED","INC","LLC","CO","VISA","MASTERCARD","EFTPOS","PURCHASE","PAYMENT","PMT","CARD","XX","AUS","AUSTRALIA","INTERNATIONAL","TRANSACTION","FEE","DEBIT","CREDIT","DIRECT","TRANSFER","WWW","COM","HTTP","HTTPS","PAYPAL","POS","REF","VALUE","DATE","ID","AU","US"]);
+/* The merchant is the name, not the reference stuck to it. Amazon pays out as
+   "AMAZON.CSVZTKNY0", "AMAZON.CLSEYQR6L" and so on — a fresh code every time —
+   and Upwork bills as "Upwork -818382738ref". Keyed on the whole string, twenty
+   Amazon payouts were twenty different merchants and a rule on one never caught
+   the next. So a code hanging off a dot at the end of the name goes, and so does
+   any word that mixes letters with digits. (A dot followed by more text, as in
+   WWW.FACEBOOK.COM, is a name and is kept.) */
+const MK_VERSION=2;
 function merchantKey(desc){
-  const raw=String(desc||"").toUpperCase().replace(/[^A-Z0-9 ]+/g," ");
-  const toks=raw.split(/\s+/).filter(t=>t&&!/^\d+$/.test(t)&&t.length>2&&!NOISE.has(t));
+  const raw=String(desc||"").toUpperCase()
+    .replace(/\.[A-Z0-9]{6,}(?=\s|$)/g," ")
+    .replace(/[^A-Z0-9 ]+/g," ");
+  const toks=raw.split(/\s+/).filter(t=>t&&!/^\d+$/.test(t)&&!(/\d/.test(t)&&/[A-Z]/.test(t))
+                                       &&t.length>2&&!NOISE.has(t));
   return toks.slice(0,3).join(" ")||raw.trim().slice(0,24);
 }
 
@@ -1316,7 +1331,7 @@ const BOOKS=[
   {id:"track", label:"Tracking",    sub:"live, two-coded", docs:"trk"},
 ];
 const emptyBook=()=>({tx:[],rules:{},biz:{name:"",abn:""}});
-let S={v:3,book:"track",books:{tax:emptyBook(),track:emptyBook()},tracks:null,
+let S={v:3,mkv:MK_VERSION,book:"track",books:{tax:emptyBook(),track:emptyBook()},tracks:null,
        lineFor:{},                                  // ATO category key -> sheet line key
        taxFy:CUR_FY.id,gridYear:new Date().getFullYear()};
 
@@ -1384,6 +1399,29 @@ function migrate(p){
       p.books[k]=b;
     }
     p.lineFor=p.lineFor||{};
+    /* Merchant keys are stored on each row at import, so a better merchantKey
+       only helps rows imported after it. Bring the stored ones up to date once,
+       and move each rule to wherever its rows' key now lands. */
+    if((p.mkv||1)<MK_VERSION){
+      for(const k of ["tax","track"]){
+        const b=p.books[k];
+        const moved={};                          // old key -> new key, from real rows
+        for(const t of b.tx){
+          const nk=merchantKey(t.desc);
+          if(t.mk&&t.mk!==nk&&!moved[t.mk]) moved[t.mk]=nk;
+          t.mk=nk;
+        }
+        const nr={};
+        for(const mk in b.rules){
+          const to=moved[mk]||mk;
+          /* Two old keys can land on one new one. The first rule wins rather
+             than one quietly overwriting another; the rules panel shows it. */
+          if(!nr[to]) nr[to]=b.rules[mk];
+        }
+        b.rules=nr;
+      }
+      p.mkv=MK_VERSION;
+    }
     p.v=3;
     return p;
   }

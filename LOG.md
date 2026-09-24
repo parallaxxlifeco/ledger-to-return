@@ -45,6 +45,51 @@ minute.
 
 ---
 
+## 24 September 2026 — One merchant, not twenty
+
+An Amazon payout, coded as business income: "should align to Amazon on the
+sheet — but I can't see it as an option." It was there, one step later — the
+ATO category comes first, the sheet line second. But looking at it turned up two
+real problems that would have hit every payout after it.
+
+**There was no category for selling goods.** Parallaxx sells on Amazon and
+Shopify, and the income list had coaching, events, courses, speaking,
+affiliates, sponsorship — and Other. Amazon had to go under Other business
+income, and then the learned category→line pairing would have put *every*
+future miscellaneous receipt on the Amazon line. **Product sales** is added; on
+the ATO schedule it is business income like the rest.
+
+**Every Amazon payout has its own code.** Twenty of them in the Wise export —
+`AMAZON.CSVZTKNY0`, `AMAZON.CLSEYQR6L`, `AMAZON.CZZUSCOGM` — and `merchantKey`
+kept the code, so they were twenty different merchants and a rule on one would
+never have caught the next. Upwork was the same (`Upwork -818382738ref`).
+
+`merchantKey` now drops a code hanging off a dot at the end of a name, and any
+word that mixes letters with digits:
+
+    AMAZON.CSVZTKNY0          -> AMAZON
+    AMAZON.CZZUSCOGM          -> AMAZON       (no digits in that one — the dot rule catches it)
+    AMAZON.RC5XR74G4 London   -> AMAZON LONDON  (a purchase; stays separate)
+    Upwork -818382738ref ...  -> UPWORK DUBLIN
+    WWW.FACEBOOK.COM          -> FACEBOOK     (dot followed by more text is a name)
+
+Direction still separates the payouts from purchases, so a Product sales rule on
+Amazon never touches an Amazon order.
+
+**Stored keys had to move too.** `mk` is written onto each row at import, so a
+better function only helps later imports. `migrate()` recomputes every stored
+key once (`mkv` versions it) and moves each rule to wherever its rows now land —
+via the rows, not by re-keying the old key string, because a code with no digits
+in it can only be recognised while the dot is still there. None of his nine
+existing rules contained a code, so none of them moved. It is idempotent, which
+matters because a Drive copy without `mkv` will run it again.
+
+`merchant.test.mjs` covers the keys, the category, the migration and its second
+run, and that one rule on one payout fills the others — category and line —
+while leaving an Amazon purchase alone.
+
+---
+
 ## 24 September 2026 — Wise has no amount column
 
 The first Wise import came in at minus two and a half billion dollars.
