@@ -4,6 +4,47 @@ What was built, when, and what you'd need to know to change it. Newest first.
 
 ---
 
+## 24 September 2026 — Two key shapes in one file
+
+"I am still seeing them all there - please delete them from the list."
+
+He was right and I had been wrong twice, blaming the browser cache. The build
+was current. Looking at the live app rather than guessing:
+
+    saved tracker lines   gia:give-it-all:teachable            (old shape)
+    RETIRED_LINES         gia:give-it-all:expense:teachable    (current shape)
+    his coded rows        budget:transformations:expense:...   (current shape)
+
+`pruneRetired` matched on the key string, so it matched nothing and removed
+nothing, every time, in silence.
+
+**The same mismatch was doing quieter damage.** His saved lines were the old
+shape but his transactions were the new one, so `TRK[t.line]` missed on all
+eleven lines he had coded to. `gridData` skips a row whose line it cannot find —
+so his monthly actuals grid was empty, and nothing said why. That is the worse
+bug of the two, and it would not have been noticed until the numbers were needed.
+
+`normaliseTrackKeys()` brings a saved list to the current shape before anything
+tries to match on it, and carries every reference across: transactions, rules,
+learned category→line pairings, and roll-up targets. Where an old key was
+ambiguous — TRANSFORMATIONS has a GIA income line and a GIA expense line, both
+`budget:transformations:gia` — the amount's sign decides, the same rule
+`resolveLine` already used. It runs on both load paths, local and remote, before
+`pruneRetired`.
+
+`keyshape.test.mjs` rebuilds the exact broken state and asserts the repair:
+every key ends up current, the software lines go, Facebook survives on the
+Budget Tracker, a coded line resolves again, the ambiguous key splits by sign,
+the grid gets its figures back, a second run is a no-op, and a retired line with
+a transaction on it is still kept.
+
+**The lesson is the cheap one: look at the running thing.** Two turns were spent
+telling him to hard-refresh, on the confident assumption that a correct build
+meant correct behaviour. One read of the live app's own state found it in a
+minute.
+
+---
+
 ## 24 September 2026 — Facebook is not a subscription
 
 "All of these are subscriptions that can be folded into regular subscriptions.

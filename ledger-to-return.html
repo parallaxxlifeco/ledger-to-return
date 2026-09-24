@@ -905,6 +905,55 @@ const RETIRED_LINES=new Set([
   "budget:transformations:expense:typeform","budget:transformations:expense:adobe",
   "budget:transformations:expense:microsoft",
 ]);
+/* Saved line keys from before the direction was part of them look like
+   sheet:block:label. The seed, the retired list and every transaction coded
+   since use sheet:block:direction:label. Two shapes in one file is how a list
+   of lines stops matching anything: TRK lookups miss, so the monthly grid drops
+   coded rows on the floor, and a retired line is never recognised as retired.
+
+   So the saved list is brought to the current shape first, and everything that
+   points at it is carried across. Where an old key was ambiguous — TRANSFORMATIONS
+   had a GIA income line and a GIA expense line, both "budget:transformations:gia" —
+   the amount's sign picks, which is the same rule resolveLine already uses. */
+function normaliseTrackKeys(){
+  const map={};                                   // old key -> {income, expense}
+  let moved=0;
+  for(const l of TRACKS){
+    if(!l||!l.sheet||!l.label) continue;
+    if(!l.kind) l.kind=/income/i.test(String(l.group))?"income":"expense";
+    const want=lineKey(l.sheet,l.group,l.kind,l.label);
+    if(l.key!==want){
+      (map[l.key]=map[l.key]||{})[l.kind]=want;
+      l.key=want; moved++;
+    }
+  }
+  if(!moved) return 0;
+  const pick=(key,dir)=>{
+    const alt=map[key]; if(!alt) return null;
+    return alt[dir]||alt.income||alt.expense||null;
+  };
+  for(const k of ["tax","track"]){
+    const b=S.books&&S.books[k]; if(!b) continue;
+    for(const t of (b.tx||[])){
+      if(t.line&&map[t.line]) t.line=pick(t.line,(t.amt>=0?"income":"expense"))||t.line;
+    }
+    for(const mk in (b.rules||{})){
+      const r=b.rules[mk];
+      if(r&&r.l&&map[r.l]){
+        const dir=(r.t&&CAT[r.t]&&CAT[r.t].kind!=="exclude")?CAT[r.t].kind:"expense";
+        r.l=pick(r.l,dir)||r.l;
+      }
+    }
+  }
+  for(const c in (S.lineFor||{})){
+    const v=S.lineFor[c];
+    if(v&&map[v]) S.lineFor[c]=pick(v,(CAT[c]&&CAT[c].kind!=="exclude")?CAT[c].kind:"expense")||v;
+  }
+  for(const l of TRACKS) if(l.rollsTo&&map[l.rollsTo]) l.rollsTo=pick(l.rollsTo,l.kind)||l.rollsTo;
+  indexTracks(); S.tracks=TRACKS;
+  return moved;
+}
+
 function pruneRetired(){
   const used=new Set();
   for(const k of ["tax","track"]) for(const t of ((S.books&&S.books[k]&&S.books[k].tx)||[])) if(t.line) used.add(t.line);
@@ -1278,6 +1327,7 @@ async function boot(){
   if(!local){ try{ local=migrate(JSON.parse(localStorage.getItem(LSKEY_V1))); }catch(e){} }
   if(local) S=Object.assign(S,local);
   if(Array.isArray(S.tracks)&&S.tracks.length){ TRACKS=S.tracks; indexTracks(); }
+  normaliseTrackKeys();          // one key shape, before anything tries to match on it
   pruneRetired();
   Store=localStore;
   renderAll(); renderStorage();
@@ -1302,6 +1352,7 @@ async function boot(){
       S=Object.assign(S,remote);
       S.lineFor=remote.lineFor||S.lineFor||{};
       if(Array.isArray(remote.tracks)&&remote.tracks.length){ TRACKS=remote.tracks; indexTracks(); S.tracks=TRACKS; }
+      normaliseTrackKeys();
       pruneRetired();
       localSave();
     }else if(localCount){ markDirty(); }
