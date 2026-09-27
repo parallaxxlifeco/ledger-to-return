@@ -110,9 +110,8 @@ const retired = await p.evaluate(() => {
 check('GIVE IT ALL keeps only the four that carry figures',
   JSON.stringify(retired.giaExpense) === JSON.stringify(['VENUE', 'EDITING', 'ADMIN / ASSISTANT', 'LOGISTICS']),
   retired.giaExpense.join(', '));
-/* Four since Reconnected Woman was added alongside Reconnected Man. */
-check('CIRCLES keeps its lines — they carry real figures and feed the roll-up',
-  retired.giaCircles.length === 4 && retired.giaCircles.includes('income/Reconnected Woman'), retired.giaCircles.join(', '));
+check('CIRCLES is untouched — it carries real figures and feeds the roll-up',
+  retired.giaCircles.length === 3, retired.giaCircles.join(', '));
 check('the Budget Tracker software lines are gone', retired.budSoftware.length === 0, retired.budSoftware.join(', '));
 check('Regular Subcriptions is still there to fold them into', retired.hasRegularSubs, retired.budKeeps.join(', '));
 /* Facebook is ad spend, not a tool you subscribe to, so it keeps its own line

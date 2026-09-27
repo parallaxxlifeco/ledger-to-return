@@ -4,6 +4,33 @@ What was built, when, and what you'd need to know to change it. Newest first.
 
 ---
 
+## 27 September 2026 — CIRCLES is one line
+
+"Okay lets keep Circles which combines both the reconnected Man and the
+reconnected woman as one."
+
+The Reconnected Woman line added earlier today is gone again. Both circles'
+income goes on **CIRCLES · Reconnected Man** (GIA sheet), which rolls into
+Reconnected Man on the Budget Tracker as before — no new rows needed in either
+Google Sheet. The line keeps its name and key so nothing already coded or
+pasted by key moves.
+
+- `STRIPE_LINES`: one pattern, `reconnected (man|men|woman|women)`, to the
+  Reconnected Man line.
+- `SHEET_SEED`, `ROLLUP_SEED`: the Woman lines removed. `ADDED_LINES` is empty
+  (the mechanism stays for next time).
+- `MERGED_LINES` + `mergeLines()` in `part_c2b.js`, run from `pruneRetired`:
+  anyone who opened the build with the Woman line has rows, rules and the
+  learned category→line map moved to Reconnected Man; the Woman keys are in
+  `RETIRED_LINES`, so the now-unused lines drop out. Use the same two
+  structures to fold any line into another later.
+
+Tests: `stripe.test.mjs` checks both circles land on the one line and that a
+saved Woman line folds across with its rows and rules; `direction.test.mjs` is
+back to three CIRCLES lines.
+
+---
+
 ## 27 September 2026 — His products, answered
 
 "I would like the rules applied to these … GIVE IT ALL (Tickets), Speaker,

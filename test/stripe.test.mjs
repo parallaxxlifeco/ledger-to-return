@@ -245,7 +245,8 @@ check('and it can be added', pay.canAdd && pay.rows.length === 7, `${pay.rows.le
 
 /* ---------------- his products, answered ---------------- */
 /* Daniel's lines for what he sells: GIVE IT ALL tickets, Speakers, Founders
-   Breakfast, The Reconnected Man, The Reconnected Woman. A checkout holding
+   Breakfast, and CIRCLES — one line, Reconnected Man, for both the Man's and
+   the Woman's circle. A checkout holding
    Founders Breakfast and GIVE IT ALL is split 50/50. Subscriptions only ever
    say "Subscription", so they are asked — once per subscriber. */
 console.log('\nHIS PRODUCTS:');
@@ -283,16 +284,16 @@ const prod = await p.evaluate(() => {
     split: sales.filter(t => /1 of 2/.test(t.desc)).map(t => ({line: t.line, amt: t.amt, mk: t.mk})),
     man: on(/Reconnected Man/), woman: on(/Reconnected Woman/),
     subs: sales.filter(t => /Subscription/.test(t.desc)).map(t => ({mk: t.mk, line: t.line})),
-    woLine: TRK['gia:circles:income:reconnected-woman'] ? rollTarget('gia:circles:income:reconnected-woman') : null,
+    noWomanLine: !TRK['gia:circles:income:reconnected-woman'] && !TRK['budget:transformations:income:reconnected-woman'],
   };
 });
 const TK = 'gia:give-it-all:income:tickets', SP = 'gia:give-it-all:income:speakers',
-  FB = 'gia:circles:income:founders-breakfast', RM = 'gia:circles:income:reconnected-man', RW = 'gia:circles:income:reconnected-woman';
+  FB = 'gia:circles:income:founders-breakfast', RM = 'gia:circles:income:reconnected-man';
 check('GIVE IT ALL at any price goes on Tickets', prod.gia.length === 2 && prod.gia.every(t => t.line === TK && t.done && t.auto));
 check('Speaker goes on Speakers', prod.speaker.length === 1 && prod.speaker[0].line === SP);
 check('Founders Breakfast goes on Founders Breakfast', prod.fb.length === 1 && prod.fb[0].line === FB, JSON.stringify(prod.fb));
-check('The Reconnected Man and Woman go on their own lines', prod.man[0]?.line === RM && prod.woman[0]?.line === RW);
-check('a Reconnected Woman line exists, and rolls into the Budget Tracker', prod.woLine === 'budget:transformations:income:reconnected-woman', String(prod.woLine));
+check('The Reconnected Man and Woman both go on the one CIRCLES line', prod.man[0]?.line === RM && prod.woman[0]?.line === RM);
+check('there is no separate Reconnected Woman line on either sheet', prod.noWomanLine);
 check('Founders Breakfast + GIVE IT ALL is split 50/50, one half on each line',
   prod.split.length === 2 && prod.split.some(t => t.line === FB) && prod.split.some(t => t.line === TK)
   && near(prod.split[0].amt + prod.split[1].amt, 72.55) && Math.abs(prod.split[0].amt - prod.split[1].amt) <= 0.011,
@@ -307,8 +308,8 @@ check('the standing answers show up as rules you can see', Object.values(prod.ru
 const kept2 = await p.evaluate(() => {
   const h = B().tx.find(t => t.mk === 'STRIPE SUBSCRIPTION · H@EXAMPLE.COM');
   go('sort'); filter = 'all'; curId = h.id; renderList();
-  ruleOn = true; choose('gia:circles:income:reconnected-woman');
-  const both = B().tx.filter(t => t.mk === 'STRIPE SUBSCRIPTION · H@EXAMPLE.COM').every(t => t.line === 'gia:circles:income:reconnected-woman');
+  ruleOn = true; choose('gia:circles:income:reconnected-man');
+  const both = B().tx.filter(t => t.mk === 'STRIPE SUBSCRIPTION · H@EXAMPLE.COM').every(t => t.line === 'gia:circles:income:reconnected-man');
   const other = B().tx.find(t => t.mk === 'STRIPE SUBSCRIPTION · I@EXAMPLE.COM').line;
   removeRule('STRIPE GIVE IT ALL - BALI', true);
   const reopened = B().tx.filter(t => t.mk === 'STRIPE GIVE IT ALL - BALI').every(t => !t.line && t.tax === 'x_income_reported' && t.kind === 'business');
@@ -325,16 +326,26 @@ check('and nobody else\'s', !kept2.other);
 check('removing a standing rule sends its sales back for a line, still marked already reported', kept2.reopened);
 check('and the next import does not bring the rule back', !kept2.ruleBack && !kept2.freshLine);
 
-const woman = await p.evaluate(() => {
-  /* A saved line list from before Reconnected Woman existed. */
-  TRACKS = TRACKS.filter(l => !/reconnected-woman/.test(l.key)); indexTracks();
+const merged = await p.evaluate(() => {
+  /* For anyone who opened the build that had a Reconnected Woman line: their
+     saved list has it, and something may already be coded to it. */
+  const W = 'gia:circles:income:reconnected-woman', M = 'gia:circles:income:reconnected-man';
+  const at = TRACKS.findIndex(l => l.key === M);
+  TRACKS.splice(at + 1, 0, {key: W, sheet: 'gia', group: 'CIRCLES', label: 'Reconnected Woman', kind: 'income', scope: 'business',
+                            rollsTo: 'budget:transformations:income:reconnected-woman'});
+  TRACKS.push({key: 'budget:transformations:income:reconnected-woman', sheet: 'budget', group: 'TRANSFORMATIONS',
+               label: 'Reconnected Woman', kind: 'income', scope: 'business', rollsTo: null});
+  indexTracks();
+  const t = B().tx.find(x => x.role === 'sale');
+  t.line = W; B().rules['STRIPE TEST WOMAN'] = {k: 'business', l: W, t: 'x_income_reported'};
   pruneRetired();
-  const gia = TRACKS.filter(l => l.sheet === 'gia' && l.group === 'CIRCLES' && l.kind === 'income').map(l => l.label);
-  const bud = TRACKS.filter(l => l.sheet === 'budget' && l.kind === 'income').map(l => l.label);
-  return {gia, budAfterMan: bud[bud.indexOf('Reconnected Man') + 1]};
+  return {row: t.line, rule: B().rules['STRIPE TEST WOMAN'].l,
+          gone: !TRACKS.some(l => /reconnected-woman/.test(l.key)),
+          circles: TRACKS.filter(l => l.sheet === 'gia' && l.group === 'CIRCLES' && l.kind === 'income').map(l => l.label)};
 });
-check('a saved line list gets Reconnected Woman, in its place', JSON.stringify(woman.gia) === JSON.stringify(['Reconnected Man', 'Reconnected Woman', 'Founders Breakfast'])
-  && woman.budAfterMan === 'Reconnected Woman', JSON.stringify(woman));
+check('a saved Reconnected Woman line folds into Reconnected Man — rows and rules move with it',
+  merged.row === 'gia:circles:income:reconnected-man' && merged.rule === 'gia:circles:income:reconnected-man' && merged.gone
+  && JSON.stringify(merged.circles) === JSON.stringify(['Reconnected Man', 'Founders Breakfast']), JSON.stringify(merged));
 
 console.log(bad ? `\n${bad} CHECK(S) FAILED` : '\nStripe exports read and split correctly');
 console.log('PAGE ERRORS:', errs.length ? errs : 'none');

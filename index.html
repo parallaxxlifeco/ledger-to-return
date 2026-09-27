@@ -868,7 +868,7 @@ const SHEET_SEED=[
    {g:"GIVE IT ALL", kind:"income", lines:[
      ["Tickets"],["Speakers"],["Partners"]]},
    {g:"CIRCLES", kind:"income", lines:[
-     ["Reconnected Man"],["Reconnected Woman"],["Founders Breakfast"]]},
+     ["Reconnected Man"],["Founders Breakfast"]]},
    /* The GIA sheet prints the software lines too, but they are never used there
       — subscriptions are a Budget Tracker matter. What is left is what actually
       carries figures, and what the Budget Tracker roll-up depends on. */
@@ -882,7 +882,7 @@ const SHEET_SEED=[
      ["Brian McCafferty"],["Brian Balfe"],["Gary Moore"],
      ["Dennis"],["Christine"],["Beni Williams"],
      ["Vault"],["Silja"],["Jody"],["ProTrader"],
-     ["GIA"],["Reconnected Man"],["Reconnected Woman"],["Founders Breakfast"],
+     ["GIA"],["Reconnected Man"],["Founders Breakfast"],
      ["Contract/Misc"]]},
    {g:"PARALLAXX", kind:"income", lines:[
      ["Amazon AU"],["Amazon US"],["Shopify"]]},
@@ -933,7 +933,6 @@ const ROLLUP_SEED={
   "gia:give-it-all:income:partners":             "budget:transformations:income:gia",
   "gia:circles:income:reconnected-man":          "budget:transformations:income:reconnected-man",
   "gia:circles:income:founders-breakfast":       "budget:transformations:income:founders-breakfast",
-  "gia:circles:income:reconnected-woman":        "budget:transformations:income:reconnected-woman",
   "gia:give-it-all:expense:venue":               "budget:transformations:expense:gia",
   "gia:give-it-all:expense:editing":             "budget:transformations:expense:gia",
   "gia:give-it-all:expense:logistics":           "budget:transformations:expense:gia",
@@ -965,6 +964,8 @@ const RETIRED_LINES=new Set([
   "budget:transformations:expense:klaviyo","budget:transformations:expense:misc-subcriptions",
   "budget:transformations:expense:typeform","budget:transformations:expense:adobe",
   "budget:transformations:expense:microsoft",
+  /* folded into Reconnected Man — see MERGED_LINES */
+  "gia:circles:income:reconnected-woman","budget:transformations:income:reconnected-woman",
 ]);
 /* Saved line keys from before the direction was part of them look like
    sheet:block:label. The seed, the retired list and every transaction coded
@@ -1018,7 +1019,7 @@ function normaliseTrackKeys(){
 /* Lines added to the seed after he had a saved list. The saved list replaces
    the seed on load, so a new line never appears unless it is put in — here,
    straight after the line it follows in the seed. */
-const ADDED_LINES=["gia:circles:income:reconnected-woman","budget:transformations:income:reconnected-woman"];
+const ADDED_LINES=[];
 function addNewLines(){
   const seed=seedTracks();
   let n=0;
@@ -1032,8 +1033,28 @@ function addNewLines(){
   if(n){ indexTracks(); S.tracks=TRACKS; }
   return n;
 }
+/* Lines folded into another. Everything pointing at the old one — rows, rules,
+   the learned category→line map — moves across first, so the old line is then
+   unused and drops out with the rest of RETIRED_LINES.
+   Reconnected Woman had a line of its own for a day; Daniel keeps the CIRCLES
+   circle income as one line, "Reconnected Man", covering both circles. */
+const MERGED_LINES={
+  "gia:circles:income:reconnected-woman":"gia:circles:income:reconnected-man",
+  "budget:transformations:income:reconnected-woman":"budget:transformations:income:reconnected-man",
+};
+function mergeLines(){
+  let n=0;
+  for(const k of ["tax","track"]){
+    const b=S.books&&S.books[k]; if(!b) continue;
+    for(const t of b.tx||[]) if(MERGED_LINES[t.line]){ t.line=MERGED_LINES[t.line]; n++; }
+    for(const mk in b.rules||{}){ const r=b.rules[mk]; if(r&&MERGED_LINES[r.l]){ r.l=MERGED_LINES[r.l]; n++; } }
+  }
+  for(const c in (S.lineFor||{})) if(MERGED_LINES[S.lineFor[c]]) S.lineFor[c]=MERGED_LINES[S.lineFor[c]];
+  return n;
+}
 function pruneRetired(){
   addNewLines();
+  mergeLines();
   const used=new Set();
   for(const k of ["tax","track"]) for(const t of ((S.books&&S.books[k]&&S.books[k].tx)||[])) if(t.line) used.add(t.line);
   const before=TRACKS.length;
@@ -1429,8 +1450,9 @@ const STRIPE_LINES=[
   [/^give it all\b/i,         "gia:give-it-all:income:tickets"],
   [/^speakers?\b/i,           "gia:give-it-all:income:speakers"],
   [/^founders breakfast\b/i,  "gia:circles:income:founders-breakfast"],
-  [/reconnected man\b/i,      "gia:circles:income:reconnected-man"],
-  [/reconnected wom[ae]n\b/i, "gia:circles:income:reconnected-woman"],
+  /* Both circles are one line: CIRCLES · Reconnected Man carries the Woman's
+     circle too. */
+  [/reconnected (man|men|wom[ae]n)\b/i, "gia:circles:income:reconnected-man"],
 ];
 function stripeLineFor(desc){
   const prod=stripeProduct(desc);
