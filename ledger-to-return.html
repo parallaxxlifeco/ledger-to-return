@@ -851,7 +851,7 @@ const SHEET_SEED=[
    {g:"GIVE IT ALL", kind:"income", lines:[
      ["Tickets"],["Speakers"],["Partners"]]},
    {g:"CIRCLES", kind:"income", lines:[
-     ["Reconnected Man"],["Founders Breakfast"]]},
+     ["Reconnected Man"],["Reconnected Woman"],["Founders Breakfast"]]},
    /* The GIA sheet prints the software lines too, but they are never used there
       — subscriptions are a Budget Tracker matter. What is left is what actually
       carries figures, and what the Budget Tracker roll-up depends on. */
@@ -865,7 +865,7 @@ const SHEET_SEED=[
      ["Brian McCafferty"],["Brian Balfe"],["Gary Moore"],
      ["Dennis"],["Christine"],["Beni Williams"],
      ["Vault"],["Silja"],["Jody"],["ProTrader"],
-     ["GIA"],["Reconnected Man"],["Founders Breakfast"],
+     ["GIA"],["Reconnected Man"],["Reconnected Woman"],["Founders Breakfast"],
      ["Contract/Misc"]]},
    {g:"PARALLAXX", kind:"income", lines:[
      ["Amazon AU"],["Amazon US"],["Shopify"]]},
@@ -916,6 +916,7 @@ const ROLLUP_SEED={
   "gia:give-it-all:income:partners":             "budget:transformations:income:gia",
   "gia:circles:income:reconnected-man":          "budget:transformations:income:reconnected-man",
   "gia:circles:income:founders-breakfast":       "budget:transformations:income:founders-breakfast",
+  "gia:circles:income:reconnected-woman":        "budget:transformations:income:reconnected-woman",
   "gia:give-it-all:expense:venue":               "budget:transformations:expense:gia",
   "gia:give-it-all:expense:editing":             "budget:transformations:expense:gia",
   "gia:give-it-all:expense:logistics":           "budget:transformations:expense:gia",
@@ -997,7 +998,25 @@ function normaliseTrackKeys(){
   return moved;
 }
 
+/* Lines added to the seed after he had a saved list. The saved list replaces
+   the seed on load, so a new line never appears unless it is put in — here,
+   straight after the line it follows in the seed. */
+const ADDED_LINES=["gia:circles:income:reconnected-woman","budget:transformations:income:reconnected-woman"];
+function addNewLines(){
+  const seed=seedTracks();
+  let n=0;
+  for(const key of ADDED_LINES){
+    if(TRACKS.some(l=>l.key===key)) continue;
+    const i=seed.findIndex(l=>l.key===key); if(i<0) continue;
+    let at=TRACKS.length;
+    for(let j=i-1;j>=0;j--){ const k=TRACKS.findIndex(l=>l.key===seed[j].key); if(k>-1){ at=k+1; break; } }
+    TRACKS.splice(at,0,seed[i]); n++;
+  }
+  if(n){ indexTracks(); S.tracks=TRACKS; }
+  return n;
+}
 function pruneRetired(){
+  addNewLines();
   const used=new Set();
   for(const k of ["tax","track"]) for(const t of ((S.books&&S.books[k]&&S.books[k].tx)||[])) if(t.line) used.add(t.line);
   const before=TRACKS.length;
@@ -1355,7 +1374,53 @@ function stripeProduct(desc){
   if(/^payment for invoice$/i.test(d)) d="";
   return d;
 }
-const stripeKey=(desc,who)=>("STRIPE "+(stripeProduct(desc)||who||"SALE").toUpperCase()).slice(0,64);
+/* A subscription says only "Subscription", so the product can't tell which
+   circle it is. The subscriber can: the same person renews every month. So a
+   subscription is keyed on who pays, and one answer with R covers their
+   renewals. */
+const stripeKey=(desc,who)=>{
+  const prod=stripeProduct(desc);
+  const k=prod==="Subscription"&&who?"SUBSCRIPTION · "+who:(prod||who||"SALE");
+  return ("STRIPE "+k.toUpperCase()).slice(0,72);
+};
+/* One checkout, two events: "Founders Breakfast ($35) + GIVE IT ALL - Bali ($16)".
+   Daniel's call: split it evenly across the events in it, so each lands on its
+   own line. Returns the parts, or null when there is nothing to split —
+   "GIVE IT ALL ($25) + GIVE IT ALL ($80)" is one event bought twice. */
+function stripeParts(desc){
+  const parts=String(desc||"").split(/\s\+\s/).map(x=>x.trim()).filter(Boolean);
+  if(parts.length<2) return null;
+  const prods=new Set(parts.map(x=>stripeProduct(x).toUpperCase()));
+  return prods.size>1?parts:null;
+}
+/* The sale row, or one row per event when a checkout held several. The pieces
+   add back to the cent: every share is rounded, and the last takes the rest. */
+function stripeSaleRows(amt,desc,who,word,ref){
+  const parts=stripeParts(desc);
+  const tail=who?" — "+who:"";
+  if(!parts) return [{amt,desc:`Stripe ${word} · ${desc||who||"payment"}${desc?tail:""}`,ref,mk:stripeKey(desc,who),prod:desc}];
+  const share=Math.round(amt/parts.length*100)/100;
+  return parts.map((x,i)=>({
+    amt:i<parts.length-1?share:Math.round((amt-share*(parts.length-1))*100)/100,
+    desc:`Stripe ${word} · ${x} (1 of ${parts.length} in “${desc}”)${tail}`,
+    ref:ref+"|part"+(i+1), mk:stripeKey(x,who), prod:x}));
+}
+/* Where each thing Daniel sells goes on the sheets. These are the lines on the
+   GIA sheet; each rolls into its Budget Tracker line as well. Anything that
+   doesn't match — subscriptions, invoices, a new product — is asked. */
+const STRIPE_LINES=[
+  [/^give it all\b/i,         "gia:give-it-all:income:tickets"],
+  [/^speakers?\b/i,           "gia:give-it-all:income:speakers"],
+  [/^founders breakfast\b/i,  "gia:circles:income:founders-breakfast"],
+  [/reconnected man\b/i,      "gia:circles:income:reconnected-man"],
+  [/reconnected wom[ae]n\b/i, "gia:circles:income:reconnected-woman"],
+];
+function stripeLineFor(desc){
+  const prod=stripeProduct(desc);
+  if(!prod||stripeParts(desc)) return null;
+  const hit=STRIPE_LINES.find(([re])=>re.test(prod));
+  return hit?hit[1]:null;
+}
 
 /* Payments → Export. Not a balance report: one row per payment attempt, with
    what the customer was charged (Amount, Currency) and what reached his
@@ -1395,7 +1460,6 @@ function stripePaymentRows(headers,body){
     const id=txt(r,I.id), desc=txt(r,I.desc);
     const who=I.who.map(i=>txt(r,i)).find(Boolean)||"";
     const what=stripeProduct(desc)||desc||"payment";
-    const mk=stripeKey(desc,who);
     const fee=num(r[I.fee])+num(r[I.tax]);
     const emit=(amt,d,dt,pre)=>{
       if(Math.abs(amt)<0.005) return;
@@ -1403,7 +1467,8 @@ function stripePaymentRows(headers,body){
       tally(cur,"emitted",amt); tally(cur,"net",amt);
     };
     sales++; tally(cur,"sales",gross);
-    emit(gross,`Stripe sale · ${desc||what}${who?" — "+who:""}`,date,{role:"sale",ref:"stripe|"+id,mk});
+    for(const x of stripeSaleRows(gross,desc,who,"sale","stripe|"+id))
+      emit(x.amt,x.desc,date,{role:"sale",ref:x.ref,mk:x.mk,prod:x.prod});
     if(fee){ tally(cur,"fees",-fee);
       emit(-fee,`Stripe fee · ${what}`,date,{role:"fee",ref:"stripe|"+id+"|fee",mk:"STRIPE FEES"}); }
     /* A refund is its own event on its own day, at the rate that day — his one
@@ -1412,8 +1477,9 @@ function stripePaymentRows(headers,body){
     if(back>0){
       refunds++; tally(cur,"refunds",-back);
       const rd=txt(r,I.refDate).slice(0,10);
-      emit(-back,`Stripe refund · ${desc||what}${who?" — "+who:""}`,/^\d{4}-\d{2}-\d{2}$/.test(rd)?rd:date,
-           {role:"sale",ref:"stripe|"+id+"|refund",mk});
+      const rdate=/^\d{4}-\d{2}-\d{2}$/.test(rd)?rd:date;
+      for(const x of stripeSaleRows(-back,desc,who,"refund","stripe|"+id+"|refund"))
+        emit(x.amt,x.desc,rdate,{role:"sale",ref:x.ref,mk:x.mk,prod:x.prod});
     }
     const po=txt(r,I.payout); if(/^po_/.test(po)) payoutIds.add(po);
   }
@@ -1491,8 +1557,8 @@ function stripeRows(headers,body){
       sales++;
       tally(cur,gross<0?"refunds":"sales",gross);
       const word=STRIPE_SALE_WORD[scat]||(gross<0?"refund":"sale");
-      emit(gross,`Stripe ${word} · ${desc||name}${who&&desc?" — "+who:""}`,
-           {role:"sale",ref:"stripe|"+id,mk:stripeKey(desc,who)});
+      for(const x of stripeSaleRows(gross,desc||name,who&&desc?who:"",word,"stripe|"+id))
+        emit(x.amt,x.desc,{role:"sale",ref:x.ref,mk:x.mk,prod:x.prod});
     }else{
       others[scat||"unlabelled"]=(others[scat||"unlabelled"]||0)+1;
       tally(cur,"other",gross);
@@ -1569,7 +1635,7 @@ function normRule(r){
     /* Direction comes from the tax category, which is what tells an income line
        apart from an expense line of the same name. */
     const dir=(r.t&&CAT[r.t]&&CAT[r.t].kind==="income")?1:-1;
-    return {k,l:r.l?resolveLine(r.l,dir):null,t:r.t||null};
+    return {k,l:r.l?resolveLine(r.l,dir):null,t:r.t||null,...(r.from?{from:r.from}:{})};
   }
   if(r.c){
     const dir=(r.t&&CAT[r.t]&&CAT[r.t].kind==="income")?1:-1;
@@ -1936,7 +2002,7 @@ function addParsed(){
   const {out}=buildRows();
   const bk=B();
   const existing=new Set(bk.tx.map(t=>t.id));
-  let added=0,auto=0,fromStripe=0;
+  let added=0,auto=0,fromStripe=0,seeded=0,stripeSales=0;
   for(const t of out){
     const id=txId(t);
     if(existing.has(id)) continue;
@@ -1945,8 +2011,15 @@ function addParsed(){
     const rule=bk.rules[mk];
     const rec={...t,id,mk,cat:null,auto:false};
     if(isTrack()){ rec.kind=null; rec.line=null; rec.tax=null; }
-    if(rec.src==="stripe"&&stripePreset(rec,rule)){
-      if(settled(rec)){ rec.auto=true; fromStripe++; } else rec.auto=false;
+    /* The standing answers for what he sells (STRIPE_LINES) become real rules
+       the first time a product turns up — listed in Rules, and removable. One
+       he removes stays removed. */
+    if(isTrack()&&rec.src==="stripe"&&rec.role==="sale"&&!bk.rules[mk]&&!(bk.ruleOff||{})[mk]){
+      const l=stripeLineFor(rec.prod);
+      if(l&&TRK[l]){ bk.rules[mk]={k:"business",l,t:"x_income_reported",from:"stripe"}; seeded++; }
+    }
+    if(rec.src==="stripe"&&stripePreset(rec,bk.rules[mk])){
+      if(settled(rec)){ rec.auto=true; if(rec.role==="sale") stripeSales++; else fromStripe++; } else rec.auto=false;
       bk.tx.push(rec); added++;
       continue;
     }
@@ -1975,7 +2048,8 @@ function addParsed(){
   $("#impText").value=""; PARSED=null;
   renderAll();
   toast(added?`${added} added${auto?`, ${auto} filled in from what you've sorted before`:""}${
-    fromStripe?`, ${fromStripe} fees and payouts filled in from Stripe's own labels`:""}`:"Nothing new — those rows were already loaded");
+    fromStripe?`, ${fromStripe} fees and payouts filled in from Stripe's own labels`:""}${
+    stripeSales?`, ${stripeSales} sales put on their event's line`:""}`:"Nothing new — those rows were already loaded");
   if(added) go("sort");
 }
 
@@ -2771,10 +2845,16 @@ function removeRule(mk,reopen){
   if(reopen){
     for(const t of bk.tx){
       if(t.mk!==mk||!t.auto) continue;
-      if(isTrack()){ t.kind=null; t.line=null; t.tax=null; } else t.cat=null;
+      /* A Stripe sale goes back to needing its line, not to knowing nothing —
+         it is still income the ATO already has. */
+      if(isTrack()&&t.src==="stripe"&&t.role==="sale"){ t.line=null; }
+      else if(isTrack()){ t.kind=null; t.line=null; t.tax=null; } else t.cat=null;
       t.auto=false; back++;
     }
   }
+  /* Remembered, so the next Stripe import doesn't quietly put a standing
+     answer back. */
+  if(mk.startsWith("STRIPE ")) (bk.ruleOff=bk.ruleOff||{})[mk]=1;
   delete bk.rules[mk];
   markDirty();
   if(reopen&&back){ filter="todo"; $$("#filterChips .chip").forEach(c=>c.setAttribute("aria-pressed",String(c.dataset.f==="todo"))); }

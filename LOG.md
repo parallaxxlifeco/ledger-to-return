@@ -4,6 +4,56 @@ What was built, when, and what you'd need to know to change it. Newest first.
 
 ---
 
+## 27 September 2026 — His products, answered
+
+"I would like the rules applied to these … GIVE IT ALL (Tickets), Speaker,
+Founders Breakfast, The Reconnected Man, The Reconnected Woman … subscription
+only shows Subscription so I will need to mark these manually once … Where
+Founders Breakfast and GIVE IT ALL is on the same line - we split it 50/50."
+
+**Standing answers.** `STRIPE_LINES` in `part_c2c.js` maps what he sells to a
+GIA sheet line (each rolls into its Budget Tracker line):
+
+    GIVE IT ALL …          -> GIVE IT ALL · Tickets
+    Speaker …              -> GIVE IT ALL · Speakers
+    Founders Breakfast …   -> CIRCLES · Founders Breakfast
+    … Reconnected Man …    -> CIRCLES · Reconnected Man
+    … Reconnected Woman …  -> CIRCLES · Reconnected Woman
+
+The first time a product turns up in an import, `addParsed` writes a real rule
+for it (`from:"stripe"`, kept through `normRule`), so it is listed in Rules and
+can be removed like any other. Removing one records it in `bk.ruleOff`, and the
+next import does not put it back. Removing with reopen sends a Stripe sale back
+for its line only — it stays "income the ATO already has".
+
+**Subscriptions** are keyed on the subscriber (`STRIPE SUBSCRIPTION · email`),
+not on the word "Subscription", so pressing R once per person files their
+renewals and nobody else's. "Payment for Invoice" and blank descriptions are
+keyed on the customer as before.
+
+**Split checkouts.** `stripeParts` / `stripeSaleRows`: a description joined with
+" + " naming more than one product becomes one row per product, the amount split
+evenly (the last share takes the rounding, so the pieces add to the cent), each
+keyed and filed on its own product. Same product twice is not split. Refunds of
+a split checkout split the same way. The fee stays one row.
+
+**New line: Reconnected Woman**, on the GIA sheet under CIRCLES and on the
+Budget Tracker under TRANSFORMATIONS, rolling GIA → Budget like Reconnected
+Man. A saved line list replaces the seed on load, so `ADDED_LINES` /
+`addNewLines()` (called from `pruneRetired`) slots it in after Reconnected Man
+for anyone who already has one. **Both Google Sheets need a matching row** for
+the actuals to land.
+
+His year, run through it (not stored): 592 sale rows — 457 Tickets, 48
+Speakers, 38 Founders Breakfast (20 checkouts split into 40 halves) filed
+automatically; 49 left, which is 19 answers with R: 10 subscribers (37
+payments), 3 invoices, 8 without a description.
+
+`stripe.test.mjs` 60 checks; `direction.test.mjs` now expects four CIRCLES
+income/expense lines.
+
+---
+
 ## 27 September 2026 — Stripe's Payments export, and rules per product
 
 Daniel sent a real export to check against: **Payments → Export**
