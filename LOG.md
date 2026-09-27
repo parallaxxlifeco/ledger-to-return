@@ -4,6 +4,46 @@ What was built, when, and what you'd need to know to change it. Newest first.
 
 ---
 
+## 27 September 2026 — Stripe's Payments export, and rules per product
+
+Daniel sent a real export to check against: **Payments → Export**
+(`unified_payments`), not the balance report the reader was built for. It
+would not have been recognised — no `Net`, no `Type`. It is now, by
+`isStripePayments` / `stripePaymentRows` in `part_c2c.js`.
+
+What that export is: one row per payment attempt. `Amount`/`Currency` is what
+the customer was charged (mostly USD); `Converted Amount`/`Converted Currency`
+is what reached his Stripe balance (AUD). The reader uses the converted figure —
+the AUD he actually got. `Fee` excludes GST; `Taxes On Fee` is the GST, and the
+two together come to exactly 3.5% + 30c on his international charges, so the
+fee row is both. `Failed` or `Captured=false` rows moved no money and are left
+out. A refund becomes its own row on `Refunded date (UTC)` at
+`Converted Amount Refunded` (his one refund went back as 532.70 against 521.18
+taken); Stripe keeps its fee. `Transfer` holds the payout id, so the note can
+say how many bank deposits to mark Transfer. Dates are UTC — the file has no
+local column.
+
+This export has no Stripe billing fees (Invoicing, Radar…) and nothing to
+reconcile against; the balance report has both.
+
+**Rules are now per product, not per customer.** His year: 571 sales, 368
+customers, but a handful of products. `stripeProduct` strips the bracketed
+price — "GIVE IT ALL - Bali ($23)", "(AU$23)", "(Early Bird $21 - Save $4)" all
+become "GIVE IT ALL - Bali" — and folds "Subscription creation/update" into
+"Subscription". A payment with no description falls back to the customer. Both
+Stripe readers use it (`stripeKey`). Combined baskets ("Founders Breakfast +
+GIVE IT ALL - Bali") keep their own key, so they are asked once each.
+
+His file read as: 571 sales $39,505.69, fees $1,767.05, one refund $532.70,
+51 failed left out, 143 payouts, 10 rows dated 30 Jun 2025 (last year). About
+eight answers with R sort all 571.
+
+`stripe.test.mjs` now has a payments-export section with the real header names
+and invented values. The real file was checked in the cloud session only and is
+not in the repo.
+
+---
+
 ## 27 September 2026 — Stripe, split in two
 
 "reading the income for business income for personal records not for ATO as

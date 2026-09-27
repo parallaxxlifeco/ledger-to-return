@@ -1361,6 +1361,84 @@ function stripeCols(headers){
     strong:H.includes("reporting_category")||H.includes("balance_transaction_id"),
   };
 }
+/* What was sold, as a rule key. Stripe's descriptions carry the price in
+   brackets — "GIVE IT ALL - Bali ($23)", "(AU$23)", "(Early Bird $21 - Save $4)"
+   — and the same ticket at three prices is still the same ticket. His real
+   export has 368 customers across 571 sales, most buying once, so a rule per
+   customer would almost never fire; a rule per product fires on nearly all. */
+function stripeProduct(desc){
+  let d=String(desc||"").replace(/\s*\([^)]*\d[^)]*\)/g,"").replace(/\s+/g," ").trim();
+  if(/^subscription (creation|update|cycle)$/i.test(d)) d="Subscription";
+  if(/^payment for invoice$/i.test(d)) d="";
+  return d;
+}
+const stripeKey=(desc,who)=>("STRIPE "+(stripeProduct(desc)||who||"SALE").toUpperCase()).slice(0,64);
+
+/* Payments → Export. Not a balance report: one row per payment attempt, with
+   what the customer was charged (Amount, Currency) and what reached his
+   balance (Converted Amount, Converted Currency). Stripe's fee is split across
+   two columns — Fee, and the GST on it in Taxes On Fee — and both are what he
+   paid Stripe: on his export Fee + Taxes On Fee comes to exactly 3.5% + 30c of
+   the converted amount. Failed and uncaptured attempts never moved money. */
+function isStripePayments(headers,body){
+  const H=headers.map(stripeHead);
+  if(!["id","amount","fee","status","converted_amount","converted_currency"].every(n=>H.includes(n))) return false;
+  const i=H.indexOf("id");
+  return (body||[]).slice(0,30).some(r=>/^(ch|py)_/.test(String(r[i]||"").trim()));
+}
+function stripePaymentRows(headers,body){
+  const H=headers.map(stripeHead);
+  const at=n=>H.indexOf(n);
+  const I={id:at("id"),made:at("created_date_utc")>-1?at("created_date_utc"):at("created_utc"),
+    amt:at("amount"),cur:at("currency"),conv:at("converted_amount"),convCur:at("converted_currency"),
+    ref:at("amount_refunded"),convRef:at("converted_amount_refunded"),refDate:at("refunded_date_utc"),
+    fee:at("fee"),tax:at("taxes_on_fee"),status:at("status"),captured:at("captured"),
+    desc:at("description"),payout:at("transfer"),
+    who:["customer_description","customer_email","customer_id"].map(at).filter(i=>i>-1)};
+  const num=v=>{const n=parseFloat(String(v==null?"":v).replace(/[,\s]/g,""));return isFinite(n)?n:0;};
+  const txt=(r,i)=>i>-1?String(r[i]==null?"":r[i]).replace(/\s+/g," ").trim():"";
+  const r2=n=>Math.round(n*100)/100;
+  const rows=[],sum={},payoutIds=new Set();
+  let failed=0,sales=0,refunds=0,skipped=0;
+  const tally=(cur,k,v)=>{ const s=sum[cur]||(sum[cur]={sales:0,refunds:0,fees:0,payouts:0,other:0,net:0,emitted:0});
+                           s[k]=r2(s[k]+v); };
+  for(const r of body){
+    const st=txt(r,I.status).toLowerCase();
+    if(st==="failed"||txt(r,I.captured).toLowerCase()==="false"){ failed++; continue; }
+    const date=txt(r,I.made).slice(0,10);
+    const cur=(txt(r,I.convCur)||txt(r,I.cur)).toUpperCase();
+    const gross=I.conv>-1&&txt(r,I.conv)?num(r[I.conv]):num(r[I.amt]);
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(date)||!cur||!gross){ skipped++; continue; }
+    const id=txt(r,I.id), desc=txt(r,I.desc);
+    const who=I.who.map(i=>txt(r,i)).find(Boolean)||"";
+    const what=stripeProduct(desc)||desc||"payment";
+    const mk=stripeKey(desc,who);
+    const fee=num(r[I.fee])+num(r[I.tax]);
+    const emit=(amt,d,dt,pre)=>{
+      if(Math.abs(amt)<0.005) return;
+      rows.push({date:dt,desc:d,amt:r2(amt),cur,pre:{src:"stripe",scat:"payment",...pre}});
+      tally(cur,"emitted",amt); tally(cur,"net",amt);
+    };
+    sales++; tally(cur,"sales",gross);
+    emit(gross,`Stripe sale · ${desc||what}${who?" — "+who:""}`,date,{role:"sale",ref:"stripe|"+id,mk});
+    if(fee){ tally(cur,"fees",-fee);
+      emit(-fee,`Stripe fee · ${what}`,date,{role:"fee",ref:"stripe|"+id+"|fee",mk:"STRIPE FEES"}); }
+    /* A refund is its own event on its own day, at the rate that day — his one
+       refund went back as 532.70 against 521.18 taken. Stripe keeps its fee. */
+    const back=I.convRef>-1&&txt(r,I.convRef)?num(r[I.convRef]):num(r[I.ref]);
+    if(back>0){
+      refunds++; tally(cur,"refunds",-back);
+      const rd=txt(r,I.refDate).slice(0,10);
+      emit(-back,`Stripe refund · ${desc||what}${who?" — "+who:""}`,/^\d{4}-\d{2}-\d{2}$/.test(rd)?rd:date,
+           {role:"sale",ref:"stripe|"+id+"|refund",mk});
+    }
+    const po=txt(r,I.payout); if(/^po_/.test(po)) payoutIds.add(po);
+  }
+  rows.sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:0);
+  return {kind:"payments",rows,sum,others:{},skipped,failed,payouts:0,payoutIds:payoutIds.size,
+          sales,refunds,off:[],currencies:[...new Set(rows.map(r=>r.cur))].sort()};
+}
+
 function isStripeCsv(headers,body){
   const c=stripeCols(headers);
   if([c.gross,c.fee,c.net,c.cur,c.cat,c.date].some(i=>i<0)) return false;
@@ -1425,12 +1503,13 @@ function stripeRows(headers,body){
       continue;
     }
     const name=who||desc||"customer";
+    const what=stripeProduct(desc)||desc||name;
     if(role==="sale"){
       sales++;
       tally(cur,gross<0?"refunds":"sales",gross);
       const word=STRIPE_SALE_WORD[scat]||(gross<0?"refund":"sale");
-      emit(gross,`Stripe ${word} · ${name}${desc&&desc!==name?" — "+desc:""}`,
-           {role:"sale",ref:"stripe|"+id,mk:("STRIPE "+name.toUpperCase()).slice(0,56)});
+      emit(gross,`Stripe ${word} · ${desc||name}${who&&desc?" — "+who:""}`,
+           {role:"sale",ref:"stripe|"+id,mk:stripeKey(desc,who)});
     }else{
       others[scat||"unlabelled"]=(others[scat||"unlabelled"]||0)+1;
       tally(cur,"other",gross);
@@ -1438,13 +1517,13 @@ function stripeRows(headers,body){
            {role:"other",ref:"stripe|"+id,mk:("STRIPE "+(scat||"OTHER").toUpperCase()).slice(0,56)});
     }
     if(fee){ tally(cur,"fees",-fee);
-      emit(-fee,`Stripe fee · ${name}`,{role:"fee",ref:"stripe|"+id+"|fee",mk:"STRIPE FEES"}); }
+      emit(-fee,`Stripe fee · ${what}`,{role:"fee",ref:"stripe|"+id+"|fee",mk:"STRIPE FEES"}); }
   }
   rows.sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:0);
   /* What we made has to add back up to what Stripe says reached the balance.
      If it doesn't, a column was read wrong — say so rather than carry on. */
   const off=Object.entries(sum).filter(([k,s])=>Math.abs(s.emitted-s.net)>0.011).map(([k])=>k);
-  return {rows,sum,others,skipped,payouts,sales,off,
+  return {kind:"balance",rows,sum,others,skipped,payouts,sales,off,
           currencies:[...new Set(rows.map(r=>r.cur))].sort()};
 }
 function stripeCsvText(rows){
@@ -1732,8 +1811,11 @@ function doParse(){
      and he wants them in different places — so each becomes its own row, with
      the answer Stripe's own label already gives. */
   let pre=null,block=false;
-  if(!isWiseCsv(headers)&&isStripeCsv(headers,body)){
-    const st=stripeRows(headers,body);
+  const stripeKind=isWiseCsv(headers)?null
+    : isStripeCsv(headers,body)?"balance"
+    : isStripePayments(headers,body)?"payments":null;
+  if(stripeKind){
+    const st=stripeKind==="balance"?stripeRows(headers,body):stripePaymentRows(headers,body);
     if(st.rows.length){
       const text=stripeCsvText(st.rows);
       const re=parseDelimited(text,",");
@@ -3382,23 +3464,29 @@ function showStripeNote(st){
       <td class="r mono">${fmtCur(s.fees,c)}</td>
       <td class="r mono">${s.payouts?fmtCur(s.payouts,c):"—"}</td>
       <td class="r mono">${fmtCur(s.net,c)}</td>
-      <td style="color:${st.off.includes(c)?"var(--crit)":"var(--income)"}">${st.off.includes(c)?"DOES NOT ADD UP":"adds up"}</td></tr>`).join("");
+      <td style="color:${st.off.includes(c)?"var(--crit)":"var(--income)"}">${st.kind==="payments"?"":st.off.includes(c)?"DOES NOT ADD UP":"adds up"}</td></tr>`).join("");
   const others=Object.entries(st.others).map(([k,n])=>`${n} × ${esc(k.replace(/_/g," "))}`).join(", ");
   box.innerHTML=`
     <div class="flagbox ${bad?"crit":"ok"}"><div>
-      <div class="ft">${st.rows.length} rows read from a Stripe export</div>
+      <div class="ft">${st.rows.length} rows read from a Stripe ${st.kind==="payments"?"payments":"balance"} export</div>
       <div class="fd">${bad
         ? "Sales minus fees does not come to what Stripe says reached your balance. Do not add these — send the file over and I'll look at it."
-        : "Each sale is split in two: the sale itself (monthly sheets only — the ATO already has it from Stripe) and Stripe's fee (the return only, as a deduction). Checked: sales − fees = Stripe's net."}</div>
+        : "Each sale is split in two: the sale itself (monthly sheets only — the ATO already has it from Stripe) and Stripe's fee (the return only, as a deduction)."+
+          (st.kind==="payments"
+            ? " Amounts are what reached your Stripe balance (Converted Amount), and the fee includes the GST Stripe charges on it (Taxes On Fee)."
+            : " Checked: sales − fees = Stripe's net.")}</div>
     </div></div>
     <div class="tablewrap" style="margin-top:10px"><table>
       <thead><tr><th>Currency</th><th class="r">Sales</th><th class="r">Refunds</th><th class="r">Fees</th>
         <th class="r">Payouts</th><th class="r">Net</th><th></th></tr></thead>
       <tbody>${sumRows}</tbody></table></div>
     <p class="hint" style="margin-top:9px">
-      <b>Filled in for you:</b> fees (Business · Bank, merchant &amp; payment fees · return only) and payouts (Transfer).<br>
-      <b>Left for you:</b> the sheet line for each sale — press <kbd>R</kbd> before choosing and every later sale from that customer lands on the same line.<br>
-      ${st.payouts
+      <b>Filled in for you:</b> fees (Business · Bank, merchant &amp; payment fees · return only)${st.kind==="payments"?"":" and payouts (Transfer)"}.<br>
+      <b>Left for you:</b> the sheet line for each sale — press <kbd>R</kbd> before choosing and every other sale of the same thing, at any price, lands on the same line.<br>
+      ${st.kind==="payments"?`${st.failed?`${st.failed} failed or uncaptured payment${st.failed===1?"":"s"} left out — no money moved.<br>`:""}
+        <b>On the bank side:</b> these went to your bank in ${st.payoutIds} payout${st.payoutIds===1?"":"s"}. Each one arrives in CommBank or Wise as money in — mark those <b>Transfer</b> (<kbd>R</kbd> then <kbd>T</kbd> makes it a rule), or the sheets count the income twice.<br>
+        This export has no Stripe billing fees (Invoicing, Radar and the like) — those are only in Reports → Balance.<br>`
+      : st.payouts
         ? `<b>On the bank side:</b> each of the ${st.payouts} payout${st.payouts===1?"":"s"} also arrives in CommBank or Wise as money in. Mark those <b>Transfer</b> too (<kbd>R</kbd> then <kbd>T</kbd> makes it a rule), or the sheets count the income twice.<br>`
         : `No payouts in this file — that's fine. When a Stripe payout lands in CommBank or Wise, mark it <b>Transfer</b> (<kbd>R</kbd> then <kbd>T</kbd> makes it a rule), or the sheets count the income twice.<br>`}
       ${others?`<b>Asked like any other row:</b> ${others}.<br>`:""}
