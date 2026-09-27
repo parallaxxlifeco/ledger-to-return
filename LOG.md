@@ -4,6 +4,73 @@ What was built, when, and what you'd need to know to change it. Newest first.
 
 ---
 
+## 27 September 2026 — Stripe, split in two
+
+"reading the income for business income for personal records not for ATO as
+they already log this. And second reading the fees a business expense as part
+of my tax filings because ATO doesn't take this."
+
+Built before the first export arrives, so it reads both shapes Stripe hands
+out: **Reports → Balance → Download → Itemised** (`reporting_category`, `gross`,
+`fee`, `net`, `created`) and the older **Balance → All transactions** export
+(`Type`, `Amount`, `Fee`, `Net`, `Created (UTC)`). `isStripeCsv` in
+`part_c2c.js` knows it by those columns — and, where the column names alone
+would also fit PayPal, by Stripe's own ids (`txn_…`, `ch_…`, `po_…`).
+
+**One Stripe row becomes up to two here.** `stripeRows`:
+
+| Stripe says | Becomes | Sorted |
+|---|---|---|
+| charge / payment | the sale (gross) **and** its fee (−fee) | sale: Business · *Income the ATO already has — sheets only*, line asked. Fee: Business · Bank, merchant & payment fees · **return only** |
+| refund, dispute | the sale going back, plus any dispute fee | same as a sale, negative — comes off the same income line |
+| fee, stripe_fee, tax, network_cost | Stripe's own charges and the GST on them | fee, return only |
+| payout | his money moving to the bank | Transfer |
+| anything else (contribution, adjustment…) | one row | asked like any other |
+
+The sheet line is the only question left, and a rule is per **customer**: the
+key is `STRIPE <customer name or email>`, set by the reader rather than by
+`merchantKey`, which keeps only three words and would have run "Jo Example" and
+"Jo Other" together. The MK_VERSION migration leaves those keys alone. A
+customer rule also covers their refunds (`ruleDir` returns no direction for the
+`biz` category), since a refund comes off the line the sale went on.
+
+What was added to make that possible:
+
+- `x_income_reported` in `CATS`: listed under Business income, but
+  `kind:"exclude"`, so it is in no return total — the report lists it under
+  "kept off". `biz:true` lets a Business row use it and still be asked for a
+  line; `dir:"income"` makes a refund ask for an *income* line, not an expense.
+- `t.noSheet` on a fee row: `settled()` accepts a Business row with a category
+  and no line when it is set, the chips say **Return only**, and re-answering one
+  never asks for a line.
+- `t.ref`: Stripe's id. `txId` uses it when present, so two identical $50
+  tickets bought the same day stay two rows. Every other reader is unchanged.
+- `PARSED.pre`: per-row answers a reader already knows, carried through
+  `buildRows` into `addParsed` → `stripePreset`.
+- `lineMode(t)` in `part_c4.js`: a row that arrives with its category known and
+  only the line missing goes straight to "Which income line?". Before, it showed
+  the category list again, and picking a line from it did nothing.
+
+**The check.** Sales − fees has to come to Stripe's own `net`, per currency. If
+it doesn't, the note says DOES NOT ADD UP and Add stays disabled — a column was
+read wrong. Dates use Stripe's local `created` column over `created_utc` where
+both exist, so a sale at 6 am on the 1st isn't filed on the 31st.
+
+**The other half is on the bank side.** The payout that lands in CommBank or Wise
+is the same money again; it has to be marked Transfer there too (R then T makes
+it a rule), or the sheets count the income twice. The import note says so every
+time.
+
+Not decided here: whether the ATO's figure is gross or net of refunds. Refunds
+are kept off the return with the sales; worth confirming with the accountant.
+GST on Stripe's fees is counted as part of the fee.
+
+`test/stripe.test.mjs`, 38 checks, against `test/fixtures/stripe-sample.csv` —
+synthetic (example.com customers, `_TEST` ids) and let through the hook and
+`.gitignore` by name. Replace it with a real export and the hook will refuse it.
+
+---
+
 ## 24 September 2026 — Two key shapes in one file
 
 "I am still seeing them all there - please delete them from the list."

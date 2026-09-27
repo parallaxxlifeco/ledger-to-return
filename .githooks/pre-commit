@@ -17,6 +17,7 @@ for f in $staged; do
   case "$f" in
     build/rates.json) ;;                      # ECB reference rates, public data
     test/fixtures/wise-sample.csv) ;;         # invented names and ids; the Wise test needs it
+    test/fixtures/stripe-sample.csv) ;;       # invented customers and ids; the Stripe test needs it
     *.pdf|*.csv|*.tsv|*.ofx|*.qif|*.xls|*.xlsx|*.json)
       echo "BLOCKED  $f"
       echo "         Statements, exports and saved data do not belong in a public repo."

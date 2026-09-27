@@ -26,3 +26,11 @@ Any other statement will have different figures, so change `SAYS` at the top of
 `pdf.test.mjs` to whatever page 1 of yours says, and the reconciliation checks
 still mean something: they compare the parse against the bank's own arithmetic,
 not against numbers anyone typed in twice.
+
+# Stripe
+
+`stripe-sample.csv` is **synthetic** — invented customers, `example.com`
+addresses, `_TEST` ids — in the shape of Stripe's itemised balance-change
+report. It is committed on purpose; the pre-commit hook and `.gitignore` let it
+through by name. Never replace it with a real export: real ones carry customer
+names and emails.

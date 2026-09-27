@@ -18,6 +18,8 @@ test/fixtures/*.pdf
 test/fixtures/*.csv
 # except this one: invented names and ids, real shape. The Wise test needs it.
 !test/fixtures/wise-sample.csv
+# and this one: example.com customers, _TEST ids. The Stripe test needs it.
+!test/fixtures/stripe-sample.csv
 
 # symlink made by build/make-test-pages.py so build/ can reach ../vendor
 build/vendor

@@ -602,6 +602,12 @@ const CATS=[
   ["inc_sponsor","Sponsorship income","Other business income"],
   ["inc_other","Other business income","Other business income"],
   ["inc_refund","Refund of a business expense","Reduces expenses",{note:"Offsets the category it came from — tell your accountant which."}],
+  /* Stripe sales. The ATO already has the total from Stripe, so they stay off
+     this return — but they are real business income and belong on the monthly
+     sheets. kind:"exclude" keeps them out of every return total; biz:true lets
+     a Business row use it and still be asked for a sheet line. */
+  ["x_income_reported","Income the ATO already has — sheets only","— (not on this return)",
+   {kind:"exclude",dir:"income",biz:true}],
  ]},
  {g:"People you pay",k:"expense",items:[
   ["ex_contract","Contractors & freelancers","Contractor, sub-contractor and commission expenses"],
@@ -1306,6 +1312,130 @@ function wiseCsvText(rows){
   return L.join("\n");
 }
 
+/* ---- Stripe balance transactions (CSV) ----
+   Stripe Dashboard → Reports → Balance → Balance change from activity (or
+   Payouts) → Download → Itemised. Also the older Balance → All transactions
+   export, which names the same columns differently. One row per movement of his
+   Stripe balance, with the sale and Stripe's cut side by side:
+
+     gross   what the customer paid (a refund or payout is negative)
+     fee     what Stripe kept — including the GST Stripe charges on its fees
+     net     gross − fee, what reached his balance
+
+   He wants the two halves in different places. The sale goes on the monthly
+   sheets but not on the return, because the ATO already has the total from
+   Stripe. The fee goes on the return as a deduction but not on the sheets. So
+   every sale becomes two rows here: the sale, and its fee. A payout is his own
+   money moving to the bank — a transfer. */
+const stripeHead=h=>String(h||"").toLowerCase().replace(/\(utc\)/g," utc ")
+  .replace(/[^a-z0-9]+/g,"_").replace(/^_+|_+$/g,"");
+const STRIPE_ID=/^(txn|ch|py|po|re|pyr|dp|du|ipi|trr|tr|adj|ic)_[A-Za-z0-9]+$/;
+function stripeCols(headers){
+  const H=headers.map(stripeHead);
+  const at=(...names)=>{ for(const n of names){ const i=H.indexOf(n); if(i>-1) return i; } return -1; };
+  return {
+    id:at("balance_transaction_id","id"),
+    date:at("created","created_local","created_utc","created_date_utc","date"),
+    gross:at("gross","amount"), fee:at("fee"), net:at("net"),
+    cur:at("currency"), cat:at("reporting_category","type"),
+    desc:at("description"), source:at("source_id","source","charge_id","payment_intent_id"),
+    who:["customer_name","customer_email","customer_description","card_name",
+         "billing_details_name","customer_id"].map(n=>H.indexOf(n)).filter(i=>i>-1),
+    strong:H.includes("reporting_category")||H.includes("balance_transaction_id"),
+  };
+}
+function isStripeCsv(headers,body){
+  const c=stripeCols(headers);
+  if([c.gross,c.fee,c.net,c.cur,c.cat,c.date].some(i=>i<0)) return false;
+  if(c.strong) return true;
+  /* Gross/Fee/Net/Type/Currency alone is PayPal's shape too. Stripe's ids give
+     it away: txn_…, ch_…, po_… */
+  return (body||[]).slice(0,30).some(r=>
+    [c.id,c.source].some(i=>i>-1&&STRIPE_ID.test(String(r[i]||"").trim())));
+}
+/* Stripe's reporting categories — and the older export's Type values — sorted
+   into the three things he cares about. Anything not listed is asked. */
+function stripeRole(cat){
+  const c=String(cat||"").toLowerCase().trim();
+  if(/payout/.test(c)) return "payout";
+  if(/^(fee|stripe_fee|tax|tax_fee|network_cost|stripe_fx_fee|application_fee_refund_reversal)$/.test(c)) return "fee";
+  if(/^(charge|payment|refund|payment_refund|charge_failure|refund_failure|dispute|dispute_reversal|partial_capture_reversal|payment_failure_refund|payment_reversal|payment_unreconciled)$/.test(c)) return "sale";
+  return "other";
+}
+const STRIPE_SALE_WORD={refund:"refund",payment_refund:"refund",refund_failure:"refund reversed",
+  dispute:"dispute",dispute_reversal:"dispute won back",partial_capture_reversal:"part-capture released",
+  charge_failure:"failed payment",payment_failure_refund:"failed payment"};
+function stripeRows(headers,body){
+  const c=stripeCols(headers);
+  const num=v=>{const n=parseFloat(String(v==null?"":v).replace(/[,\s]/g,""));return isFinite(n)?n:0;};
+  const txt=(r,i)=>i>-1?String(r[i]==null?"":r[i]).replace(/\s+/g," ").trim():"";
+  const r2=n=>Math.round(n*100)/100;
+  const rows=[],sum={},others={};
+  let skipped=0,payouts=0,sales=0;
+  const tally=(cur,k,v)=>{ const s=sum[cur]||(sum[cur]={sales:0,refunds:0,fees:0,payouts:0,other:0,net:0,emitted:0});
+                           s[k]=r2(s[k]+v); };
+  for(const r of body){
+    const rawDate=txt(r,c.date);
+    const date=/^\d{4}-\d{2}-\d{2}/.test(rawDate)?rawDate.slice(0,10):rawDate;
+    const cur=txt(r,c.cur).toUpperCase();
+    const gross=num(r[c.gross]), fee=num(r[c.fee]), net=num(r[c.net]);
+    const scat=txt(r,c.cat).toLowerCase();
+    if(!date||!cur||(!gross&&!fee&&!net)){ skipped++; continue; }
+    const id=txt(r,c.id)||txt(r,c.source)||[date,scat,gross,fee,rows.length].join("|");
+    const desc=txt(r,c.desc);
+    const who=c.who.map(i=>txt(r,i)).find(Boolean)||"";
+    const role=stripeRole(scat);
+    const emit=(amt,d,pre)=>{
+      if(Math.abs(amt)<0.005) return;
+      rows.push({date,desc:d,amt:r2(amt),cur,pre:{src:"stripe",scat,...pre}});
+      tally(cur,"emitted",amt);
+    };
+    tally(cur,"net",net);
+    if(role==="payout"){
+      payouts++;
+      tally(cur,"payouts",gross);
+      emit(gross,`Stripe payout${gross>0?" returned":" to bank"}${desc&&!/^stripe payout$/i.test(desc)?" — "+desc:""}`,
+           {role:"payout",ref:"stripe|"+id,mk:"STRIPE PAYOUT"});
+      if(fee){ tally(cur,"fees",-fee);
+        emit(-fee,"Stripe payout fee",{role:"fee",ref:"stripe|"+id+"|fee",mk:"STRIPE FEES"}); }
+      continue;
+    }
+    if(role==="fee"){
+      /* Stripe's own charges — billing, Radar, invoicing, the GST on its fees.
+         The whole row is the fee, so it is the net that counts. */
+      tally(cur,"fees",net);
+      emit(net,`Stripe fee — ${desc||scat.replace(/_/g," ")}`,{role:"fee",ref:"stripe|"+id,mk:"STRIPE FEES"});
+      continue;
+    }
+    const name=who||desc||"customer";
+    if(role==="sale"){
+      sales++;
+      tally(cur,gross<0?"refunds":"sales",gross);
+      const word=STRIPE_SALE_WORD[scat]||(gross<0?"refund":"sale");
+      emit(gross,`Stripe ${word} · ${name}${desc&&desc!==name?" — "+desc:""}`,
+           {role:"sale",ref:"stripe|"+id,mk:("STRIPE "+name.toUpperCase()).slice(0,56)});
+    }else{
+      others[scat||"unlabelled"]=(others[scat||"unlabelled"]||0)+1;
+      tally(cur,"other",gross);
+      emit(gross,`Stripe ${scat.replace(/_/g," ")||"item"}${desc?" — "+desc:""}`,
+           {role:"other",ref:"stripe|"+id,mk:("STRIPE "+(scat||"OTHER").toUpperCase()).slice(0,56)});
+    }
+    if(fee){ tally(cur,"fees",-fee);
+      emit(-fee,`Stripe fee · ${name}`,{role:"fee",ref:"stripe|"+id+"|fee",mk:"STRIPE FEES"}); }
+  }
+  rows.sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:0);
+  /* What we made has to add back up to what Stripe says reached the balance.
+     If it doesn't, a column was read wrong — say so rather than carry on. */
+  const off=Object.entries(sum).filter(([k,s])=>Math.abs(s.emitted-s.net)>0.011).map(([k])=>k);
+  return {rows,sum,others,skipped,payouts,sales,off,
+          currencies:[...new Set(rows.map(r=>r.cur))].sort()};
+}
+function stripeCsvText(rows){
+  const L=[["Date","Description","Currency","Amount"].map(csvq).join(",")];
+  for(const r of rows) L.push([r.date,r.desc,r.cur,r.amt.toFixed(2)].map(csvq).join(","));
+  return L.join("\n");
+}
+
 /* ========================== STATE ==========================
    Two books share the import engine and the rate table but nothing else.
      tax   - the FY 2025-26 return. One code per transaction: a tax category.
@@ -1414,7 +1544,8 @@ function migrate(p){
         const b=p.books[k];
         const moved={};                          // old key -> new key, from real rows
         for(const t of b.tx){
-          const nk=merchantKey(t.desc);
+          /* Stripe rows carry a key built from the customer, not the text. */
+          const nk=t.src==="stripe"&&t.mk?t.mk:merchantKey(t.desc);
           if(t.mk&&t.mk!==nk&&!moved[t.mk]) moved[t.mk]=nk;
           t.mk=nk;
         }
@@ -1510,7 +1641,8 @@ function settled(t){
   if(t.kind==="personal") return !!t.line;
   if(t.kind==="transfer") return true;               // nothing more to say about it
   if(t.kind==="exclude")  return !!t.tax;
-  if(t.kind==="business") return !!t.tax&&!!t.line;   // the return AND the sheet
+  if(t.kind==="business") return !!t.tax&&(!!t.line||!!t.noSheet); // the return AND the sheet —
+                                                     // unless it is a Stripe fee, return only
   return false;
 }
 
@@ -1579,7 +1711,24 @@ function doParse(){
         $("#impAcct").value=w.currencies.length===1?"Wise "+w.currencies[0]:"Wise";
     }
   }
-  PARSED={headers,body,delim};
+  /* Stripe splits each sale into what the customer paid and what Stripe kept,
+     and he wants them in different places — so each becomes its own row, with
+     the answer Stripe's own label already gives. */
+  let pre=null,block=false;
+  if(!isWiseCsv(headers)&&isStripeCsv(headers,body)){
+    const st=stripeRows(headers,body);
+    if(st.rows.length){
+      const text=stripeCsvText(st.rows);
+      const re=parseDelimited(text,",");
+      headers=re[0]; body=re.slice(1);
+      pre=st.rows.map(r=>r.pre);
+      block=st.off.length>0;                   // it didn't add up — don't let it in
+      showStripeNote(st);
+      if(!$("#impAcct").value.trim())
+        $("#impAcct").value=st.currencies.length===1?"Stripe "+st.currencies[0]:"Stripe";
+    }
+  }
+  PARSED={headers,body,delim,pre,block};
   const map={
     date:guessCol(headers,GUESS.date), desc:guessCol(headers,GUESS.desc),
     amount:guessCol(headers,GUESS.amount), debit:guessCol(headers,GUESS.debit),
@@ -1622,7 +1771,9 @@ function buildRows(){
   const dec=$("#mapDec").value;
   const flip=$("#mapSign").value==="pos";
   const out=[],bad=[];
-  for(const r of body){
+  const pre=PARSED.pre||null;                   // per-row answers a reader already knows
+  for(let ri=0;ri<body.length;ri++){
+    const r=body[ri];
     const date=parseDate(r[map.date],fmt);
     const desc=(map.desc>-1?String(r[map.desc]||""):"").replace(/\s+/g," ").trim();
     let cur=fileCur;
@@ -1639,7 +1790,8 @@ function buildRows(){
       else if(c!=null&&c!==0) amt=Math.abs(c);
     }
     if(!date||amt==null||amt===0){ bad.push(r); continue; }
-    out.push({date,desc:desc||"(no description)",cur,amt:Math.round(amt*1e6)/1e6,acct});
+    out.push({date,desc:desc||"(no description)",cur,amt:Math.round(amt*1e6)/1e6,acct,
+              ...(pre&&pre[ri]?pre[ri]:{})});
   }
   return {out,bad,fmt};
 }
@@ -1659,22 +1811,63 @@ function renderPreview(){
   const existing=new Set(B().tx.map(t=>t.id));
   const dupes=out.filter(t=>existing.has(txId(t))).length;
   $("#dupNote").innerHTML=`${out.length} ready${bad.length?` · <span style="color:var(--warn)">${bad.length} skipped (no usable date or amount)</span>`:""}${dupes?` · <span style="color:var(--warn)">${dupes} already loaded, will be skipped</span>`:""} · dates read as ${fmt==="mdy"?"month/day/year":fmt==="ymd"?"year/month/day":"day/month/year"}`;
-  $("#btnAdd").disabled=out.length===0;
+  $("#btnAdd").disabled=out.length===0||!!PARSED.block;
 }
-function txId(t){ return hashId([t.date,t.cur,t.amt,t.acct,t.desc.slice(0,40)].join("|")); }
+/* Stripe gives every movement its own id, so two identical $50 tickets bought
+   the same day stay two rows instead of one being taken for a duplicate. */
+function txId(t){
+  if(t.ref) return hashId("ref|"+t.ref);
+  return hashId([t.date,t.cur,t.amt,t.acct,t.desc.slice(0,40)].join("|"));
+}
+/* What a Stripe row already says about itself. Stripe labels its own fees and
+   payouts, so those are answered here; a sale is known to be income the ATO
+   already has, which leaves only the sheet line — and a rule for that customer
+   answers that too. Returns false for anything else Stripe does (adjustments,
+   Climate contributions…), which is asked like any other row. */
+function stripePreset(rec,rule){
+  const track=isTrack();
+  if(rec.role==="fee"){
+    /* Return only: the ATO has the gross from Stripe, so the fees are what stop
+       him paying tax on money he never received. Not a sheet expense. */
+    if(track){ rec.kind="business"; rec.tax="ex_bank"; rec.line=null; rec.noSheet=true; }
+    else rec.cat="ex_bank";
+    return true;
+  }
+  if(rec.role==="payout"){
+    /* Stripe balance to his bank. The same money arrives in CommBank or Wise as
+       its own row, which he marks Transfer there too. */
+    if(track){ rec.kind="transfer"; rec.tax="x_transfer"; rec.line=null; }
+    else rec.cat="x_transfer";
+    return true;
+  }
+  if(rec.role==="sale"){
+    if(!track){ rec.cat="x_income_reported"; return true; }
+    rec.kind="business"; rec.tax="x_income_reported"; rec.line=null;
+    /* A customer rule names the income line. It speaks for their refunds too:
+       a refund comes off the same line the sale went on. */
+    if(rule&&rule.l&&TRK[rule.l]&&TRK[rule.l].kind==="income") rec.line=rule.l;
+    return true;
+  }
+  return false;
+}
 function addParsed(){
   const {out}=buildRows();
   const bk=B();
   const existing=new Set(bk.tx.map(t=>t.id));
-  let added=0,auto=0;
+  let added=0,auto=0,fromStripe=0;
   for(const t of out){
     const id=txId(t);
     if(existing.has(id)) continue;
     existing.add(id);
-    const mk=merchantKey(t.desc);
+    const mk=t.mk||merchantKey(t.desc);
     const rule=bk.rules[mk];
     const rec={...t,id,mk,cat:null,auto:false};
     if(isTrack()){ rec.kind=null; rec.line=null; rec.tax=null; }
+    if(rec.src==="stripe"&&stripePreset(rec,rule)){
+      if(settled(rec)){ rec.auto=true; fromStripe++; } else rec.auto=false;
+      bk.tx.push(rec); added++;
+      continue;
+    }
     /* A rule only speaks for money going the same way. An incoming refund from
        a merchant you normally pay arrives unsorted, which is correct: it is a
        different transaction and wants its own answer. */
@@ -1699,7 +1892,8 @@ function addParsed(){
   $("#mapCard").style.display="none";
   $("#impText").value=""; PARSED=null;
   renderAll();
-  toast(added?`${added} added${auto?`, ${auto} filled in from what you've sorted before`:""}`:"Nothing new — those rows were already loaded");
+  toast(added?`${added} added${auto?`, ${auto} filled in from what you've sorted before`:""}${
+    fromStripe?`, ${fromStripe} fees and payouts filled in from Stripe's own labels`:""}`:"Nothing new — those rows were already loaded");
   if(added) go("sort");
 }
 
@@ -2035,7 +2229,17 @@ function currentTx(){ return B().tx.find(t=>t.id===curId)||null; }
    is what we have before one is. */
 function dirOf(t){
   if(t.tax&&CAT[t.tax]&&CAT[t.tax].kind!=="exclude") return CAT[t.tax].kind;
+  /* A Stripe refund is money out, but it comes off an income line — it is a
+     sale going backwards, not a purchase. The category says which way. */
+  if(t.tax&&CAT[t.tax]&&CAT[t.tax].biz&&CAT[t.tax].dir) return CAT[t.tax].dir;
   return t.amt>=0?"income":"expense";
+}
+/* Asking for the sheet line: either just chosen a category, or the row arrived
+   with its category already known and only the line missing — a Stripe sale,
+   or a rule that named a category but no line. */
+function lineMode(t){
+  if(pickMode==="line") return true;
+  return isTrack()&&pickMode!=="recode"&&!!t&&t.kind==="business"&&!!t.tax&&!t.line&&!t.noSheet;
 }
 function pickPool(t){
   /* Money that went out can't be ticket sales. Offering it is how a list gets
@@ -2046,7 +2250,7 @@ function pickPool(t){
     return CATLIST.filter(c=>c.kind===want||c.kind==="exclude")
       .map(c=>({key:c.key,label:c.label,g:c.group,note:c.ato,hay:c.label+" "+c.group+" "+c.ato}));
   }
-  if(pickMode==="line"){
+  if(lineMode(t)){
     const want=dirOf(t);
     const all=linesFor("business").filter(l=>l.kind===want);
     const guess=lineGuess(t,want);
@@ -2077,7 +2281,10 @@ function pickPool(t){
   if(t.kind==="transfer") return [];
   if(t.kind==="business"){
     const want=dirOf(t);
-    return CATLIST.filter(c=>c.kind===want).map(c=>({key:c.key,label:c.label,g:c.group,note:c.ato,
+    /* "The ATO already has it" is offered for money in, and for anything read
+       from Stripe — where a refund is a sale undone, not an expense. */
+    return CATLIST.filter(c=>c.kind===want||(c.biz&&(want==="income"||t.src==="stripe")))
+      .map(c=>({key:c.key,label:c.label,g:c.group,note:c.ato,
       hay:c.label+" "+c.group+" "+c.ato}));
   }
   return [];
@@ -2136,7 +2343,7 @@ function pickHits(t){
 }
 function pickPrompt(t){
   if(!isTrack()) return t.amt>=0?"Which kind of income?":"Which expense category?";
-  if(pickMode==="line") return dirOf(t)==="income"?"Which income line in your sheets?":"Which expense line in your sheets?";
+  if(lineMode(t)) return dirOf(t)==="income"?"Which income line in your sheets?":"Which expense line in your sheets?";
   /* Your personal blocks are all spending lines, so money in is only ever
      something coming back — say so, rather than leave it looking like a
      mistake. */
@@ -2187,7 +2394,9 @@ function chips(t){
     out.push(`<em class="chip-cat" style="${gvar(CAT[t.tax].group)}" title="${esc(CAT[t.tax].group)}">${esc(CAT[t.tax].label)}</em>`);
   if(t.line&&TRK[t.line])
     out.push(`<em class="chip-line" style="${gvar(TRK[t.line].group)}" title="${esc(lineWhere(t.line))}">${esc(lineLabel(t.line))}</em>`);
-  if(t.auto) out.push(`<span class="dot" title="Filled in by a rule"></span>`);
+  else if(t.kind==="business"&&t.noSheet)
+    out.push(`<em class="chip-line" title="A deduction on the return, kept off the monthly sheets">Return only</em>`);
+  if(t.auto) out.push(`<span class="dot" title="${t.src==="stripe"?"Filled in from Stripe's own label":"Filled in by a rule"}"></span>`);
   return out.join("");
 }
 function restingCard(t){
@@ -2202,7 +2411,7 @@ function restingCard(t){
 }
 function activeCard(t){
   const e=enrich(t);
-  const needLine=isTrack()&&t.kind==="business"&&t.tax&&!t.line;
+  const needLine=isTrack()&&t.kind==="business"&&t.tax&&!t.line&&!t.noSheet;
   const picking=isTrack()? (!t.kind ? false : (pickMode==="line"||!settled(t)||pickMode==="recode"))
                          : (pickMode==="recode"||!t.cat);
   const sib=B().tx.filter(x=>x.mk===t.mk&&x.id!==t.id&&!settled(x)).length;
@@ -2334,7 +2543,7 @@ function choose(key){
     applyRule(t,{k:null,l:null,t:key});
     advance(nextId); return;
   }
-  if(pickMode==="line"){
+  if(lineMode(t)){
     if(!TRK[key]) return;
     t.line=key; t.auto=false;
     if(t.tax) S.lineFor[t.tax]=key;              // learned: this category lands on this line
@@ -2362,6 +2571,13 @@ function choose(key){
   if(t.kind==="business"){
     if(!CAT[key]) return;
     t.tax=key; t.auto=false;
+    /* A Stripe fee is for the return only — never the sheets — so there is no
+       line to ask for. */
+    if(t.noSheet){
+      t.line=null; pickMode=null;
+      applyRule(t,{k:"business",l:null,t:key});
+      advance(nextId); return;
+    }
     /* The sheet line is always asked for now, with the best guess already
        selected so Enter takes it. It used to be filled in silently from the
        first line ever used with that category, which is one line per category —
@@ -2377,6 +2593,9 @@ function choose(key){
 /* Which way a rule's answer runs, so it is only handed to rows going the same
    way. A refund from a merchant you usually pay is not the same transaction. */
 function ruleDir(rule){
+  /* A Stripe customer rule covers their refunds as well as their sales — both
+     sit on the same income line. */
+  if(rule.t&&CAT[rule.t]&&CAT[rule.t].biz) return null;
   if(rule.t&&CAT[rule.t]&&CAT[rule.t].dir) return CAT[rule.t].dir;
   if(rule.t&&CAT[rule.t]&&CAT[rule.t].kind!=="exclude") return CAT[rule.t].kind;
   if(rule.l&&TRK[rule.l]) return TRK[rule.l].kind;
@@ -2738,7 +2957,7 @@ function renderSheetsReport(){
       ${d.otherYear?`<p class="hint" style="margin-top:8px">${d.otherYear} transaction${d.otherYear===1?"":"s"} on these lines fall outside ${year}.</p>`:""}`;
   }).join("");
   const unsorted=B().tx.filter(t=>!settled(t)).length;
-  const notax=B().tx.filter(t=>settled(t)&&t.kind==="business"&&!lineOf(t)).length;
+  const notax=B().tx.filter(t=>settled(t)&&t.kind==="business"&&!lineOf(t)&&!t.noSheet).length;
   const norate=B().tx.filter(t=>enrich(t).aud==null).length;
   const stale=B().tx.filter(t=>enrich(t).rateStatus==="clamped").length;
   $("#reportInner").innerHTML=`
@@ -3130,6 +3349,43 @@ function showWiseNote(w){
       ${w.skipped.refunded?`<b>${w.skipped.refunded} refunded transfer${w.skipped.refunded===1?"":"s"} left out</b> — they were undone, so counting them would spend the money twice.<br>`:""}
       ${w.skipped.cancelled?`${w.skipped.cancelled} cancelled or failed left out.<br>`:""}
       ${w.skipped.zero?`${w.skipped.zero} zero-value row${w.skipped.zero===1?"":"s"} left out.`:""}
+    </p>`;
+  box.style.display="";
+}
+
+/* Stripe: what it split, what it already answered, and the one thing he still
+   has to do on the bank side. */
+function showStripeNote(st){
+  const box=$("#pdfNote");
+  const bad=st.off.length>0;
+  const sumRows=Object.entries(st.sum).map(([c,s])=>`<tr>
+      <td>${esc(c)}</td>
+      <td class="r mono">${fmtCur(s.sales,c)}</td>
+      <td class="r mono">${s.refunds?fmtCur(s.refunds,c):"—"}</td>
+      <td class="r mono">${fmtCur(s.fees,c)}</td>
+      <td class="r mono">${s.payouts?fmtCur(s.payouts,c):"—"}</td>
+      <td class="r mono">${fmtCur(s.net,c)}</td>
+      <td style="color:${st.off.includes(c)?"var(--crit)":"var(--income)"}">${st.off.includes(c)?"DOES NOT ADD UP":"adds up"}</td></tr>`).join("");
+  const others=Object.entries(st.others).map(([k,n])=>`${n} × ${esc(k.replace(/_/g," "))}`).join(", ");
+  box.innerHTML=`
+    <div class="flagbox ${bad?"crit":"ok"}"><div>
+      <div class="ft">${st.rows.length} rows read from a Stripe export</div>
+      <div class="fd">${bad
+        ? "Sales minus fees does not come to what Stripe says reached your balance. Do not add these — send the file over and I'll look at it."
+        : "Each sale is split in two: the sale itself (monthly sheets only — the ATO already has it from Stripe) and Stripe's fee (the return only, as a deduction). Checked: sales − fees = Stripe's net."}</div>
+    </div></div>
+    <div class="tablewrap" style="margin-top:10px"><table>
+      <thead><tr><th>Currency</th><th class="r">Sales</th><th class="r">Refunds</th><th class="r">Fees</th>
+        <th class="r">Payouts</th><th class="r">Net</th><th></th></tr></thead>
+      <tbody>${sumRows}</tbody></table></div>
+    <p class="hint" style="margin-top:9px">
+      <b>Filled in for you:</b> fees (Business · Bank, merchant &amp; payment fees · return only) and payouts (Transfer).<br>
+      <b>Left for you:</b> the sheet line for each sale — press <kbd>R</kbd> before choosing and every later sale from that customer lands on the same line.<br>
+      ${st.payouts
+        ? `<b>On the bank side:</b> each of the ${st.payouts} payout${st.payouts===1?"":"s"} also arrives in CommBank or Wise as money in. Mark those <b>Transfer</b> too (<kbd>R</kbd> then <kbd>T</kbd> makes it a rule), or the sheets count the income twice.<br>`
+        : `No payouts in this file — that's fine. When a Stripe payout lands in CommBank or Wise, mark it <b>Transfer</b> (<kbd>R</kbd> then <kbd>T</kbd> makes it a rule), or the sheets count the income twice.<br>`}
+      ${others?`<b>Asked like any other row:</b> ${others}.<br>`:""}
+      ${st.skipped?`${st.skipped} empty row${st.skipped===1?"":"s"} left out.`:""}
     </p>`;
   box.style.display="";
 }

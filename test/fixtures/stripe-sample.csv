@@ -1,0 +1,11 @@
+balance_transaction_id,created_utc,created,available_on_utc,currency,gross,fee,net,reporting_category,source_id,description,customer_facing_amount,customer_facing_currency,customer_id,customer_email,customer_name
+txn_TEST0000000001,2025-07-31 20:00:00,2025-08-01 06:00:00,2025-08-05 00:00:00,aud,150.00,4.65,145.35,charge,ch_TEST0000000001,Breathwork Workshop - August,150.00,aud,cus_TESTA,jo@example.com,Jo Example
+txn_TEST0000000002,2025-08-02 01:10:00,2025-08-02 11:10:00,2025-08-06 00:00:00,aud,50.00,1.75,48.25,charge,ch_TEST0000000002,Community Circle ticket,50.00,aud,cus_TESTA,jo@example.com,Jo Example
+txn_TEST0000000003,2025-08-02 01:12:00,2025-08-02 11:12:00,2025-08-06 00:00:00,aud,50.00,1.75,48.25,charge,ch_TEST0000000003,Community Circle ticket,50.00,aud,cus_TESTA,jo@example.com,Jo Example
+txn_TEST0000000004,2025-08-09 03:00:00,2025-08-09 13:00:00,2025-08-13 00:00:00,aud,-50.00,0.00,-50.00,refund,re_TEST0000000004,Community Circle ticket,-50.00,aud,cus_TESTA,jo@example.com,Jo Example
+txn_TEST0000000005,2025-08-11 02:00:00,2025-08-11 12:00:00,2025-08-15 00:00:00,aud,80.00,2.52,77.48,charge,ch_TEST0000000005,Coaching session,80.00,aud,cus_TESTB,sam@example.com,Sam Sample
+txn_TEST0000000006,2025-08-20 02:00:00,2025-08-20 12:00:00,2025-08-20 00:00:00,aud,-80.00,15.00,-95.00,dispute,du_TEST0000000006,Coaching session,-80.00,aud,cus_TESTB,sam@example.com,Sam Sample
+txn_TEST0000000007,2025-08-31 23:00:00,2025-09-01 09:00:00,2025-09-01 00:00:00,aud,-12.10,0.00,-12.10,fee,,Billing - Usage Fee (2025-08-01 - 2025-08-31),,,,,
+txn_TEST0000000008,2025-08-31 23:00:00,2025-09-01 09:00:00,2025-09-01 00:00:00,aud,-1.21,0.00,-1.21,tax,,Tax on Billing - Usage Fee,,,,,
+txn_TEST0000000009,2025-08-15 00:00:00,2025-08-15 10:00:00,2025-08-15 00:00:00,aud,-1.50,0.00,-1.50,contribution,,Stripe Climate,,,,,
+txn_TEST0000000010,2025-08-18 00:00:00,2025-08-18 10:00:00,2025-08-18 00:00:00,aud,-200.00,0.00,-200.00,payout,po_TEST0000000010,STRIPE PAYOUT,,,,,
