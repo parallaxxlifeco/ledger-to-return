@@ -1260,7 +1260,93 @@ function readCbaCard(lines){
   return {acct,rows:kept,rec};
 }
 
-const STATEMENT_READERS=[{id:"cba-card",label:"CommBank credit card",read:readCbaCard}];
+/* ---- CommBank bank account statement (transaction account, NetBank Saver…) ----
+   Not the card layout. A card statement is one line per charge with the amount
+   at the end; an account statement has Debit, Credit and Balance columns, a
+   description that often runs onto a second line, and periods of up to six
+   months. Once the text is joined into lines, Debit and Credit look alike —
+   both are just a figure — so the sign comes from the running balance instead:
+   each row's amount is how far the balance moved. The printed figure is then
+   checked against that movement, and the whole statement against its own
+   "Opening − Total debits + Total credits = Closing" line. */
+const CBA_ACCT_PERIOD=/(?:^|\s)Period (\d{1,2}) (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) (\d{4}) *- *(\d{1,2}) (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) (\d{4})/;
+const CBA_BAL=/\$ ?([\d,]+\.\d{2}) (CR|DR)$/;          // the balance that ends a row
+const CBA_DAY=/^(\d{1,2}) (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)(?: |$)(.*)$/;
+const CBA_PRODUCTS=/\b(NetBank Saver|GoalSaver|Smart Access|Complete Access|Everyday Offset|Streamline Basic|Business Transaction Account|Business Online Saver|Business Everyday|Pensioner Security|Wealth Package|Standard Variable Rate Home Loan)\b/;
+
+function readCbaAccount(lines){
+  const all=lines.join("\n");
+  if(!/Date Transaction Debit Credit Balance/.test(all)) return null;
+  const per=CBA_ACCT_PERIOD.exec(all);
+  if(!per) return null;
+  const start=new Date(+per[3],CBA_MON[per[2]],+per[1]);
+  const end  =new Date(+per[6],CBA_MON[per[5]],+per[4]);
+  const accNo=/Account Number +([\d ]{6,})/.exec(all);
+  const last4=accNo?accNo[1].replace(/\D/g,"").slice(-4):"";
+  const prod=CBA_PRODUCTS.exec(all);
+  const acct="CommBank "+(prod?prod[1]:"account")+(last4?" "+last4:"");
+  const signed=(v,cd)=>cd==="DR"?-num(v):num(v);
+  const dateFor=(day,mon)=>{
+    for(const y of [start.getFullYear(),end.getFullYear()]){
+      const d=new Date(y,CBA_MON[mon],day);
+      if(d>=start&&d<=end) return d;
+    }
+    return new Date(start.getFullYear(),CBA_MON[mon],day);
+  };
+  const r2=n=>Math.round(n*100)/100;
+  const opening=(/OPENING BALANCE \$ ?([\d,]+\.\d{2}) (CR|DR)/.exec(all));
+  const closing=(/CLOSING BALANCE \$ ?([\d,]+\.\d{2}) (CR|DR)/.exec(all));
+  if(!opening||!closing) return null;
+  let bal=signed(opening[1],opening[2]);
+  const rows=[];let pending=null,mismatch=0;
+  for(const line of lines){
+    if(/OPENING BALANCE/.test(line)) continue;
+    if(/CLOSING BALANCE/.test(line)) break;
+    if(/^(Statement \d+ \(Page|Account Number|Date Transaction Debit Credit Balance)/.test(line)) continue;
+    const d=CBA_DAY.exec(line);
+    let text=line;
+    if(d){ pending={day:+d[1],mon:d[2],parts:[]}; text=d[3]; }
+    if(!pending) continue;
+    const b=CBA_BAL.exec(text);
+    if(!b){ pending.parts.push(text); continue; }  // description carries on
+    /* A payer's reference on the second line — "DASMOLV6T7OKUB3" under an Amazon
+       payout — is different every time. Kept, it would make every payout its
+       own merchant and no rule could cover them. */
+    const isRef=w=>/^[A-Z0-9]{12,}$/.test(w);
+    /* The row ends here. What sits between the words and the balance is the
+       printed debit or credit, with the other column's stray "$". */
+    const head=text.slice(0,b.index);
+    const figs=[...head.matchAll(/([\d,]+\.\d{2})/g)].map(m=>num(m[1]));
+    const words=head.replace(/\$ ?[\d,]+\.\d{2}|[\d,]+\.\d{2}|\$/g," ");
+    const now=signed(b[1],b[2]);
+    const amt=r2(now-bal);
+    if(!figs.length||Math.abs(Math.abs(amt)-figs[figs.length-1])>0.005) mismatch++;
+    const tail=words.trim();
+    const desc=[...pending.parts,isRef(tail)?"":tail].join(" ").replace(/\s+/g," ").trim();
+    rows.push({date:iso(dateFor(pending.day,pending.mon)),desc:desc||"(no description)",aud:amt,cur:"",orig:""});
+    bal=now; pending=null;
+  }
+  if(!rows.length) return null;
+  /* "Opening balance - Total debits + Total credits = Closing balance", then
+     the four figures on the next line. */
+  const tot=/Total debits \+ Total credits = Closing balance\n\$ ?[\d,]+\.\d{2} (?:CR|DR) \$ ?([\d,]+\.\d{2}) \$ ?([\d,]+\.\d{2})/.exec(all);
+  const charges =tot?num(tot[1]):null, payments=tot?num(tot[2]):null;
+  const gotCh =r2(-rows.filter(r=>r.aud<0).reduce((s,r)=>s+r.aud,0));
+  const gotPay=r2( rows.filter(r=>r.aud>0).reduce((s,r)=>s+r.aud,0));
+  const near=(a,b)=>a!=null&&b!=null&&Math.abs(a-b)<0.005;
+  const close=signed(closing[1],closing[2]);
+  const rec={acct,period:iso(start)+" to "+iso(end),n:rows.length,
+             charges:charges??gotCh,gotCh,payments:payments??gotPay,gotPay,
+             opening:signed(opening[1],opening[2]),closing:close,mismatch,
+             ok:!mismatch&&near(bal,close)&&(tot?near(charges,gotCh)&&near(payments,gotPay):true)};
+  rec.zeros=0;
+  return {acct,rows,rec};
+}
+
+const STATEMENT_READERS=[
+  {id:"cba-card",label:"CommBank credit card",read:readCbaCard},
+  {id:"cba-account",label:"CommBank bank account",read:readCbaAccount},
+];
 
 async function readStatement(file){
   const lines=await pdfLines(await file.arrayBuffer());
@@ -3504,12 +3590,21 @@ async function takeStatements(files){
   }
   all.sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:0);
   const accts=[...new Set(reports.map(r=>r.acct))];
-  if(accts.length===1) $("#impAcct").value=accts[0];
+  /* One import is one account. Card and saver statements dropped in together
+     would all be filed under a single account name. */
+  if(accts.length>1){
+    st.textContent="";
+    showStatementReport(reports,[...failed,["These files","come from "+accts.length+" different accounts ("+accts.join(", ")+"). Import each account's statements on their own."]],0);
+    return;
+  }
+  $("#impAcct").value=accts[0];
   $("#impCur").value="AUD";
   $("#impText").value=statementCsv(all);
   st.textContent="";
   showStatementReport(reports,failed,all.length);
   doParse();
+  /* A statement that doesn't balance was read wrong somewhere. Don't let it in. */
+  if(PARSED&&reports.some(r=>!r.ok)){ PARSED.block=true; renderPreview(); }
 }
 
 /* Wise hands back more than it looks like: several currencies at once, transfers
@@ -3589,6 +3684,7 @@ function showStatementReport(reports,failed,n){
   const rows=reports.map(r=>`<tr>
       <td>${esc(r.period)}</td>
       <td class="r mono">${r.n}</td>
+      <td>${esc(r.acct||"")}</td>
       <td class="r mono">${r.charges==null?"—":fmtAUD(r.charges)}</td>
       <td class="r mono">${r.payments==null?"—":fmtAUD(r.payments)}</td>
       <td class="${r.ok?"":"r"}" style="color:${r.ok?"var(--income)":"var(--crit)"}">
@@ -3598,10 +3694,10 @@ function showStatementReport(reports,failed,n){
       <div class="ft">${n} row${n===1?"":"s"} read from ${reports.length} statement${reports.length===1?"":"s"}</div>
       <div class="fd">${bad.length
         ? "The totals below do not match what the statement says. Do not add these — send the file over and I'll look at it."
-        : "Each one was checked against its own printed totals: opening + charges − payments = closing balance."}</div>
+        : "Each one was checked against its own printed totals — every row, and opening balance to closing balance."}</div>
     </div></div>
     ${reports.length?`<div class="tablewrap" style="margin-top:10px"><table>
-      <thead><tr><th>Period</th><th class="r">Rows</th><th class="r">Charges</th><th class="r">Payments</th><th>Check</th></tr></thead>
+      <thead><tr><th>Period</th><th class="r">Rows</th><th>Account</th><th class="r">Money out</th><th class="r">Money in</th><th>Check</th></tr></thead>
       <tbody>${rows}</tbody></table></div>`:""}
     ${reports.some(r=>r.zeros)?`<p class="hint" style="margin-top:8px">${
       reports.reduce((a,r)=>a+r.zeros,0)} zero-dollar rows (waived fees, $0.00 international fees) left out after the check.</p>`:""}

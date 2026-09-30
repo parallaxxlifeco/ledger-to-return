@@ -4,6 +4,50 @@ What was built, when, and what you'd need to know to change it. Newest first.
 
 ---
 
+## 30 September 2026 — CommBank account statements
+
+"I am trying to import this for the Parallaxx apparel income but now its not a
+statement it could read. Its the same export as my credit card statement."
+
+It is the same export, but not the same layout. His NetBank Saver statement
+(where the Amazon payouts land) is a bank-account statement: Debit, Credit and
+Balance columns, descriptions that run onto a second line, a six-month period,
+and no year on the dates. The card reader looks for "Statement Period" and one
+line per charge, found neither, and said so.
+
+`readCbaAccount` in `part_c2c.js`, tried after the card reader
+(`STATEMENT_READERS`):
+
+- Recognised by the "Date Transaction Debit Credit Balance" header and
+  "Period d Mon yyyy - d Mon yyyy".
+- A row starts at a dated line and ends at the line carrying its balance
+  ("$6,004.64 CR"); anything between is description.
+- **The sign comes from the running balance**, not the columns: once joined into
+  text, a debit and a credit are both just a figure. Each amount is the balance
+  movement, and it must equal the printed figure (`mismatch` counts misses).
+- The statement's own line — Opening − Total debits + Total credits = Closing —
+  is checked too. If anything is off, the report says DOES NOT BALANCE and Add
+  stays disabled (`PARSED.block`, now set for any PDF that fails its check).
+- The "CREDIT INTEREST EARNED … is $69.77" note has no balance, so it is never
+  a row. Repeated page headers are skipped.
+- A second-line payer reference in capitals ("DASMOLV6T7OKUB3") is dropped, so
+  every Amazon payout keys as `AMAZON COMMERCIA` and one rule covers them.
+- Account named from the product and the last four digits:
+  "CommBank NetBank Saver 1986".
+
+His statement, 1 Feb – 31 Jul 2025: 21 rows, money out $5,682.00 and in
+$3,499.15, both matching the printed totals, opening $5,588.94 to closing
+$3,406.09. Most of it is FY 2024-25 — only July falls in FY 2025-26.
+
+Also: statements from different accounts dropped in together are refused with
+a message (one import is one account), and the statement report now has an
+Account column and reads Money out / Money in.
+
+`test/account.test.mjs` — synthetic lines in the exact shape pdfLines returns,
+no real statement needed.
+
+---
+
 ## 27 September 2026 — CIRCLES is one line
 
 "Okay lets keep Circles which combines both the reconnected Man and the
