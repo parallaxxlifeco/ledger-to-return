@@ -360,6 +360,45 @@ em.chip-none{background:var(--warnsoft);color:var(--warn);font-style:normal;font
 .split .rulebox{white-space:normal;align-items:flex-start;padding:6px 10px}
 .split .rulebox input{margin-top:3px}
 .split .pickmenu{max-height:max(320px,calc(100vh - 235px))}
+/* ---- sort screen, two panes (wide screens; see renderSplit) ----
+   Both panes are the height of the screen under the sticky filters, so neither
+   the answer list nor the queue ever pushes the other around. */
+#rowList.splitmode{display:grid;grid-template-columns:minmax(0,380px) minmax(0,1fr);gap:16px;
+  position:sticky;top:124px;height:calc(100vh - 138px);min-height:420px}
+.splitmode .sortleft{display:flex;flex-direction:column;gap:8px;min-height:0}
+.splitmode .sortleft>.txcard.cur{flex:none;padding:10px 12px 11px 11px}
+.splitmode .sortleft>.txcard.cur .line1{grid-template-columns:1fr auto;grid-template-areas:"d amt" "desc desc";row-gap:5px}
+.splitmode .sortleft>.txcard.cur .line1 .d{grid-area:d}
+.splitmode .sortleft>.txcard.cur .line1 .amt{grid-area:amt}
+.splitmode .sortleft>.txcard.cur .line1 .desc{grid-area:desc}
+.splitmode .sortleft>.txcard.cur .line2,.splitmode .sortleft .fx{padding-left:0}
+.splitmode .kindrow{grid-template-columns:1fr 1fr}
+.splitmode .rulebox{white-space:normal;align-items:flex-start;padding:6px 10px}
+.splitmode .rulebox input{margin-top:3px}
+.qhead{font-size:10.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--ink3);
+  display:flex;justify-content:space-between;padding:4px 2px 0}
+.qhead span{font-family:"IBM Plex Mono",monospace;letter-spacing:0}
+.queue{flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:5px;padding:2px 2px 8px 0}
+.queue .txcard{padding:7px 10px;gap:3px;flex:none}
+.queue .line1{grid-template-columns:74px minmax(0,1fr) auto;gap:8px}
+.queue .line1 .d{font-size:10.5px;white-space:nowrap}
+.queue .line1 .desc{font-size:12.5px}
+.queue .line2{padding-left:82px;min-height:0}
+.pickidle p{margin:0;max-width:44ch;line-height:1.6}
+/* The one being answered, in the queue: the card's own blue, strong enough to
+   find at a glance in a list of forty. */
+.rows .queue .txcard.qcur{opacity:1;border:2px solid var(--accent);box-shadow:inset 5px 0 0 var(--accent),0 0 0 3px var(--accentsoft);
+  background:color-mix(in srgb,var(--accent) calc(var(--tintCur) + 8%),var(--surface));padding:6px 9px 6px 14px}
+.queue .txcard.qcur .desc{font-weight:700;color:var(--ink)}
+.queue .txcard.qcur .line1 .d{color:var(--ink2)}
+.splitmode .sortright{min-height:0;display:flex;flex-direction:column}
+.splitmode .sortright .pickbox{flex:1;min-height:0}
+.splitmode .sortright .pickmenu{flex:1;min-height:0;max-height:none}
+.pickidle{flex:1;border:2px dashed var(--line);border-radius:10px;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:6px;text-align:center;padding:30px;color:var(--ink2);font-size:13px}
+.pickidle b{color:var(--ink);font-size:15px}
+.pickidle kbd{font-family:"IBM Plex Mono",monospace;font-size:10.5px;border:1px solid var(--line);border-radius:3px;
+  padding:0 5px;background:var(--surface);color:var(--ink2)}
 @media (max-width:860px){
   .txcard.cur.split{display:flex;flex-direction:column;align-items:stretch;gap:8px}
   .split .pickmenu{max-height:max(300px,calc(100vh - 330px))}
@@ -2712,6 +2751,9 @@ function renderList(){
   if(!holding&&!list.some(t=>t.id===curId)){ curId=list[0].id; resetPick(); }
   const cap=list.slice(0,250);
   const seq=holding?[held,...cap]:cap;
+  lastSplit=splitMode();
+  if(lastSplit){ renderSplit(el,seq,list.length>250); renderProgress(); return; }
+  el.classList.remove("splitmode");
   el.innerHTML=seq.map(t=>t.id===curId?activeCard(t):restingCard(t)).join("")+
     (list.length>250?`<div class="empty" style="padding:20px">Showing the first 250 of ${list.length}. Clear these and the rest come up.</div>`:"");
   wireCards();
@@ -2750,6 +2792,17 @@ function restingCard(t){
   </div>`;
 }
 function activeCard(t){
+  const {head,body,right}=activeParts(t);
+  /* Two columns while there is a list to pick from: the transaction and its
+     answers on the left, the list down the whole right side, so it needs far
+     less scrolling. Narrow screens stack them again (see .split in the CSS). */
+  if(right) return `<div class="txcard cur split" data-id="${t.id}">
+    <div class="curleft">${head}${body}</div>
+    <div class="curright">${right}</div>
+  </div>`;
+  return `<div class="txcard cur" data-id="${t.id}">${head}${body}</div>`;
+}
+function activeParts(t){
   const e=enrich(t);
   const needLine=isTrack()&&t.kind==="business"&&t.tax&&!t.line&&!t.noSheet;
   const picking=isTrack()? (!t.kind ? false : (pickMode==="line"||!settled(t)||pickMode==="recode"))
@@ -2832,15 +2885,57 @@ function activeCard(t){
     </div>
     <div class="line2"><span class="acct">${esc(t.acct)}</span>${chips(t)}${fyChip}</div>
     ${note}`;
-  /* Two columns while there is a list to pick from: the transaction and its
-     answers on the left, the list down the whole right side, so it needs far
-     less scrolling. Narrow screens stack them again (see .split in the CSS). */
-  if(right) return `<div class="txcard cur split" data-id="${t.id}">
-    <div class="curleft">${head}${body}</div>
-    <div class="curright">${right}</div>
-  </div>`;
-  return `<div class="txcard cur" data-id="${t.id}">${head}${body}</div>`;
+  return {head,body,right};
 }
+/* ---- the sort screen as a fixed two-pane layout (wide screens) ----
+   Left: the transaction being answered, and under it the whole queue. Right:
+   the pick list, always in the same place — so nothing jumps between rows, and
+   the list has the full height of the screen. Below SPLIT_MIN the old single
+   column (card inside the list) is used. */
+const SPLIT_MIN=900;
+const splitMode=()=>window.innerWidth>=SPLIT_MIN;
+/* One line per transaction; the chips only once there is an answer to show —
+   "Not sorted" on every row of a to-sort list says nothing. */
+function queueRow(t){
+  const c=chips(t);
+  return `<div class="txcard q${settled(t)?" done":""}${t.id===curId?" qcur":""}" data-id="${t.id}">
+    <div class="line1">
+      <span class="d">${niceDate(t.date)}</span>
+      <span class="desc" title="${esc(t.desc)}">${esc(t.desc)}</span>
+      ${money(t)}
+    </div>${c?`<div class="line2">${c}</div>`:""}
+  </div>`;
+}
+function rightPlaceholder(t){
+  if(isTrack()&&t.kind==="transfer") return `<div class="pickidle"><b>Transfer</b><p>Your own money moving — nothing more to record. <kbd>↓</kbd> for the next one.</p></div>`;
+  if(settled(t)) return `<div class="pickidle"><b>Sorted</b><p>Press a different answer on the left to change it, or <kbd>↓</kbd> for the next one.</p></div>`;
+  return `<div class="pickidle"><b>Personal, Business, Transfer or Other?</b><p>Answer on the left — <kbd>P</kbd> <kbd>B</kbd> <kbd>T</kbd> <kbd>O</kbd> — and the list for it opens here.</p></div>`;
+}
+function renderSplit(el,seq,more){
+  const t=seq.find(x=>x.id===curId);
+  const {head,body,right}=activeParts(t);
+  const q=el.querySelector(".queue"), keep=q?q.scrollTop:0;
+  el.classList.add("splitmode");
+  el.innerHTML=`<div class="sortleft">
+      <div class="txcard cur" data-id="${t.id}">${head}${body}</div>
+      <div class="qhead">${filter==="todo"?"Still to sort":"In this view"} <span>${seq.length}${more?"+":""}</span></div>
+      <div class="queue">${seq.map(queueRow).join("")}${more?`<div class="empty" style="padding:14px">Showing the first 250. Clear these and the rest come up.</div>`:""}</div>
+    </div>
+    <div class="sortright">${right||rightPlaceholder(t)}</div>`;
+  wireCards();
+  const nq=el.querySelector(".queue");
+  nq.scrollTop=keep;
+  const qc=nq.querySelector(".qcur");
+  if(qc){
+    const a=qc.offsetTop-nq.offsetTop, b=a+qc.offsetHeight;
+    if(a<nq.scrollTop) nq.scrollTop=a-4;
+    else if(b>nq.scrollTop+nq.clientHeight) nq.scrollTop=b-nq.clientHeight+4;
+  }
+}
+let lastSplit=null;
+window.addEventListener("resize",()=>{
+  const m=splitMode(); if(m!==lastSplit&&$("#rowList")) renderList();
+});
 function wireCards(){
   $$("#rowList .txcard").forEach(c=>c.addEventListener("mousedown",ev=>{
     if(ev.target.closest("button,input,label")) return;

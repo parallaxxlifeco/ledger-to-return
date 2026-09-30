@@ -4,6 +4,34 @@ What was built, when, and what you'd need to know to change it. Newest first.
 
 ---
 
+## 30 September 2026 — The sort screen as two fixed panes
+
+"Now put the full transaction list I am working through listed under here so it
+doesn't need to keep switching the page layout." And: "give the one I am
+currently looking at a highlight to draw the eye to it."
+
+On screens 900px wide and up, Sort is two panes, both the height of the screen
+under the sticky filters (`#rowList.splitmode`, `renderSplit` in `part_c4.js`):
+
+- **Left (380px):** the card being answered — date, amount, description, chips,
+  the four answers 2×2, Make a rule — and under it the whole queue as slim
+  one-line rows (`queueRow`), scrolling on its own. Chips show only once a row
+  has an answer. The current row is highlighted in the card's blue (`.qcur`);
+  the queue keeps its scroll position between answers and scrolls just enough
+  to keep the highlight in view. Clicking any row opens it.
+- **Right:** the ATO / sheets pick list, filling the pane. Before an answer, or
+  on a transfer or a sorted row, the pane holds a short prompt (`pickIdle`)
+  instead — so the list always opens in the same place and nothing moves.
+
+Under 900px the single column (card inside the list, list below the card) is
+unchanged; a resize across the line re-renders. `activeCard` is now built from
+`activeParts`, which both layouts use.
+
+`test/layout.test.mjs` checks both layouts, the highlight, that the pane doesn't
+move when the list opens, and that the list gets most of the screen.
+
+---
+
 ## 30 September 2026 — Two columns while picking
 
 "What if we design two columns so that the transaction detail is on the left

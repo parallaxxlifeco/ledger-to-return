@@ -116,7 +116,8 @@ check('one row per rule', panel.rows === 1, `${panel.rows}`);
 const place = await p.evaluate(() => {
   curId = 'o1'; setKind('business'); renderList();
   const card = document.querySelector('.txcard.cur');
-  const box = card.querySelector('.rulebox'), pick = card.querySelector('.pickbox');
+  /* On a wide screen the pick list is its own pane beside the card. */
+  const box = card.querySelector('.rulebox'), pick = card.querySelector('.pickbox') || document.querySelector('#rowList .pickbox');
   const kinds = card.querySelector('.kindrow');
   return {
     order: [...card.children].map(c => c.className).join(' > '),
@@ -125,6 +126,7 @@ const place = await p.evaluate(() => {
        column. Stacked on a narrow one: above it. Either way, never below. */
     aboveTheList: box && pick && (
       (!!box.closest('.curleft') && !!pick.closest('.curright')) ||
+      (!!box.closest('.sortleft') && !!pick.closest('.sortright')) ||
       box.getBoundingClientRect().top < pick.getBoundingClientRect().top),
   };
 });
