@@ -278,6 +278,13 @@ em.chip-none{background:var(--warnsoft);color:var(--warn);font-style:normal;font
   text-transform:uppercase;padding:3px 8px;border-radius:5px}
 .pickfor .step{font-size:11px;color:var(--pf);font-weight:600;letter-spacing:.03em;margin-left:auto;opacity:.85}
 .pickfor .lbl{margin:0}
+/* Business lines | Personal lines, for the second question on a business row. */
+.scopesw{display:inline-flex;border:1px solid var(--pf);border-radius:6px;overflow:hidden;margin-left:4px}
+.scopesw button{border:0;background:var(--surface);color:var(--pf);font:inherit;font-size:11px;font-weight:600;
+  padding:3px 9px;cursor:pointer}
+.scopesw button+button{border-left:1px solid var(--pf)}
+.scopesw button.on{background:var(--pf);color:var(--surface)}
+.scopesw button:not(.on):hover{background:color-mix(in srgb,var(--pf) 12%,var(--surface))}
 .pickbox.for-ato .lbl,.pickbox.for-sheet .lbl{color:var(--pf)}
 .pickbox.for-ato input:focus,.pickbox.for-sheet input:focus{border-color:var(--pf);outline-color:var(--pf)}
 .pickbox input{font-size:13px}
@@ -392,6 +399,13 @@ em.chip-none{background:var(--warnsoft);color:var(--warn);font-style:normal;font
 .splitmode .kindrow{grid-template-columns:1fr 1fr}
 .splitmode .rulebox{white-space:normal;align-items:flex-start;padding:6px 10px}
 .splitmode .rulebox input{margin-top:3px}
+/* Split a transaction in two */
+.splitrow{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12px;color:var(--ink2)}
+.splitrow.open{background:var(--surface);border:1px solid var(--line);border-radius:7px;padding:6px 8px}
+.splitcustom{display:inline-flex;align-items:center;gap:5px}
+.splitcustom input{width:58px;padding:3px 6px;font-size:12px}
+em.chip-split{background:var(--surface2);color:var(--ink2);font-style:normal;font-size:10.5px;font-weight:600;
+  padding:1px 7px;border-radius:3px;border:1px dashed var(--line)}
 .anshead{font-size:10.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--accent)}
 .queue .txcard.qcur .line2{padding-left:82px;min-height:0;margin-top:2px}
 .queue .txcard.qcur .fx{padding-left:82px;color:var(--ink2)}
@@ -768,6 +782,10 @@ const CATS=[
      off the return. It only ever describes money coming IN, so a rule made with
      it never touches a payment going the other way. */
   ["x_personal_in","Personal money in — not recorded","—",{dir:"income"}],
+  /* The other half of a cost shared with his partner, once a transaction is
+     split: money that left his account but isn't his spending. Off both sheets
+     and off the return. */
+  ["x_partner","Partner's share — not recorded","—",{dir:"expense"}],
   ["x_drawings","Owner's drawings","—"],
   ["x_transfer","Transfer between own accounts","—"],
   ["x_tax","Income tax & ATO payments","—"],
@@ -2197,13 +2215,20 @@ function renderPreview(){
       <td class="mono" style="font-size:11px;color:var(--ink3)">${e.rateSrc?niceDate(e.rateSrc):"—"}${flag}</td></tr>`;
   }).join("");
   $("#prevTable").innerHTML=head+"<tbody>"+(rows||`<tr><td colspan="6" style="color:var(--crit)">No rows could be read. Check the Date and Amount columns above.</td></tr>`)+"</tbody>";
-  const existing=new Set(B().tx.map(t=>t.id));
+  const existing=knownIds(B());
   const dupes=out.filter(t=>existing.has(txId(t))).length;
   $("#dupNote").innerHTML=`${out.length} ready${bad.length?` · <span style="color:var(--warn)">${bad.length} skipped (no usable date or amount)</span>`:""}${dupes?` · <span style="color:var(--warn)">${dupes} already loaded, will be skipped</span>`:""} · dates read as ${fmt==="mdy"?"month/day/year":fmt==="ymd"?"year/month/day":"day/month/year"}`;
   $("#btnAdd").disabled=out.length===0||!!PARSED.block;
 }
 /* Stripe gives every movement its own id, so two identical $50 tickets bought
    the same day stay two rows instead of one being taken for a duplicate. */
+/* Every id already loaded — including the originals of rows that were split,
+   so importing the same statement again doesn't bring the whole amount back. */
+function knownIds(bk){
+  const s=new Set();
+  for(const t of bk.tx){ s.add(t.id); if(t.split&&t.split.of) s.add(t.split.of); }
+  return s;
+}
 function txId(t){
   if(t.ref) return hashId("ref|"+t.ref);
   return hashId([t.date,t.cur,t.amt,t.acct,t.desc.slice(0,40)].join("|"));
@@ -2242,7 +2267,7 @@ function stripePreset(rec,rule){
 function addParsed(){
   const {out}=buildRows();
   const bk=B();
-  const existing=new Set(bk.tx.map(t=>t.id));
+  const existing=knownIds(bk);
   let added=0,auto=0,fromStripe=0,seeded=0,stripeSales=0;
   for(const t of out){
     const id=txId(t);
@@ -2571,6 +2596,12 @@ function backupFile(){
    to that answer, so it stays short. A rule, if you tick it, carries the whole
    answer forward to everything that looks the same.                          */
 let curId=null, filter="todo", listQ="", acctQ="", pickQ="", pickSel=0, pickMode=null, ruleOn=true;
+/* Which sheet lines a business row's second question offers: the business
+   blocks, or — sometimes — his personal Budget Tracker lines, for something that
+   is a deduction on the return but tracked as his own spending. null = decide
+   from what this merchant went to last time. */
+let lineScope=null;
+let splitOpen=null;                 // id of the row whose split form is open
 
 const KINDS=[
   {k:"personal", label:"Personal",  key:"P", hint:"living, lifestyle, anything not for the business"},
@@ -2579,7 +2610,7 @@ const KINDS=[
   {k:"exclude",  label:"Other",     key:"O", hint:"drawings, tax, GST, loan principal"},
 ];
 /* Transfers have their own button, so they are not in this list. */
-const EXCLUDE_CATS=["x_drawings","x_tax","x_gst","x_loan","x_capital"];
+const EXCLUDE_CATS=["x_partner","x_drawings","x_tax","x_gst","x_loan","x_capital"];
 const isTransfer=t=>isTrack()&&t.kind==="transfer";
 
 function visibleTx(){
@@ -2649,8 +2680,9 @@ function pickPool(t){
   }
   if(lineMode(t)){
     const want=dirOf(t);
-    const all=linesFor("business").filter(l=>l.kind===want);
-    const guess=lineGuess(t,want);
+    const scope=canSwitchScope(t)?scopeFor(t):"business";
+    const all=linesFor(scope).filter(l=>l.kind===want);
+    const guess=lineGuess(t,want,scope);
     const rest=all.filter(l=>!guess||l.key!==guess.key)
       .map(l=>({key:l.key,label:l.label,g:l.group,note:SHEET_NAME[l.sheet],
         hay:l.label+" "+l.group+" "+SHEET_NAME[l.sheet]}));
@@ -2670,6 +2702,9 @@ function pickPool(t){
     if(t.amt>=0&&CAT.x_personal_in) lines.unshift({key:"x_personal_in",label:"Not recorded",
       g:"PERSONAL MONEY IN",note:"off both sheets and the return",
       hay:"not recorded personal money in gift friend income ignore skip"});
+    /* The other half of a split shared cost is offered first. */
+    if(t.amt<0&&t.split&&CAT.x_partner) lines.unshift({key:"x_partner",label:"Partner's share — not recorded",
+      g:"SHARED COST",note:"off both sheets and the return",hay:"partner share shared split half not recorded"});
     return lines;
   }
   if(t.kind==="exclude"){
@@ -2719,8 +2754,21 @@ function pickMenu(hits,sel){
 /* The likeliest sheet line, and why. Who the money went to beats what kind of
    spend it was: Ivan's last invoice knows more about this one than every other
    contractor does. */
-function lineGuess(t,want){
-  const ok=k=>k&&TRK[k]&&TRK[k].kind===want&&TRK[k].scope==="business";
+function scopeFor(t){
+  if(lineScope) return lineScope;
+  let best=null;
+  for(const x of B().tx){
+    if(x.id===t.id||x.mk!==t.mk||x.kind!=="business"||!x.line||!TRK[x.line]) continue;
+    if(!best||x.date>best.date) best=x;
+  }
+  return best&&TRK[best.line].scope==="personal"?"personal":"business";
+}
+/* Personal blocks are spending lines only, so the switch is offered for money
+   going out. */
+const canSwitchScope=t=>isTrack()&&t.kind==="business"&&dirOf(t)==="expense";
+function lineGuess(t,want,scope){
+  const sc=scope||"business";
+  const ok=k=>k&&TRK[k]&&TRK[k].kind===want&&TRK[k].scope===sc;
   let best=null;
   for(const x of B().tx){
     if(x.id===t.id||x.mk!==t.mk||!ok(x.line)) continue;
@@ -2748,6 +2796,13 @@ function pickFor(t){
   if(t.kind==="personal") return {cls:"for-sheet",tag:"Your sheets",step:"Budget Tracker"};
   if(t.kind==="exclude") return {cls:"for-ato",tag:"ATO return",step:"kept off it"};
   return {cls:"for-ato",tag:"ATO return",step:"step 1 of 2"};
+}
+function scopeSwitch(t){
+  const sc=scopeFor(t);
+  return `<span class="scopesw" role="group" aria-label="Which lines">
+    <button data-scope="business" class="${sc==="business"?"on":""}" title="Lines on GIA Finance Tracking and the business blocks">Business lines</button>
+    <button data-scope="personal" class="${sc==="personal"?"on":""}" title="Your personal Budget Tracker lines — for a deduction you track as your own spending">Personal lines</button>
+  </span>`;
 }
 function pickPrompt(t){
   if(!isTrack()) return t.amt>=0?"Which kind of income?":"Which expense category?";
@@ -2808,6 +2863,7 @@ function chips(t){
   else if(t.kind==="business"&&t.noSheet)
     out.push(`<em class="chip-line" title="A deduction on the return, kept off the monthly sheets">Return only</em>`);
   if(t.auto) out.push(`<span class="dot" title="${t.src==="stripe"?"Filled in from Stripe's own label":"Filled in by a rule"}"></span>`);
+  if(t.split) out.unshift(`<em class="chip-split" title="Part ${t.split.part} of a split ${fmtCur(t.split.amt,t.cur)}">split ${t.split.pct}%</em>`);
   return out.join("");
 }
 function restingCard(t){
@@ -2863,6 +2919,7 @@ function activeParts(t){
     }
   }
 
+  body+=splitBlock(t);
   let right="";
   if(picking||needLine){
     const hits=pickHits(t);
@@ -2870,6 +2927,7 @@ function activeParts(t){
     const pf=pickFor(t);
     right=`<div class="pickbox ${pf.cls}">
       <div class="pickfor"><span class="tag">${pf.tag}</span><span class="lbl">${pickPrompt(t)}</span>${
+        lineMode(t)&&canSwitchScope(t)?scopeSwitch(t):""}${
         pf.step?`<span class="step">${esc(pf.step)}</span>`:""}</div>
       <input type="text" id="pickInput" value="${esc(pickQ)}" placeholder="Type to narrow…" autocomplete="off">
       <div class="pickmenu">${pickMenu(hits,pickSel)}</div>
@@ -2918,6 +2976,67 @@ function activeParts(t){
      card itself is only the answers. */
   const meta=`<div class="line2"><span class="acct">${esc(t.acct)}</span>${chips(t)}${fyChip}</div>${note}`;
   return {head,body,right,meta};
+}
+/* ---- splitting a transaction ----
+   One payment, two answers: half a dinner shared with his partner, or a phone
+   bill that is partly business. The row becomes two, each answered on its own.
+   The parts keep the original's date and description; together they are
+   exactly the original amount (the second takes the rounding). "Join back"
+   undoes it. The original's id is remembered, so a re-import won't restore it. */
+const zeroDp=c=>c==="IDR"||c==="JPY"||c==="KRW"||c==="VND";
+function splitAmounts(amt,pct,cur){
+  const f=zeroDp(cur)?1:100;
+  const a=Math.round(amt*pct/100*f)/f;
+  return [a,Math.round((amt-a)*f)/f];
+}
+function splitBlock(t){
+  if(t.split){
+    const sibs=B().tx.filter(x=>x.split&&x.split.of===t.split.of);
+    return `<div class="splitrow"><span>Part ${t.split.part} of ${t.split.n} · ${t.split.pct}% of ${fmtCur(t.split.amt,t.cur)}</span>
+      <button class="btn sm" data-split-join="${esc(t.split.of)}" title="Put the ${sibs.length} parts back together as one transaction">Join back</button></div>`;
+  }
+  if(splitOpen!==t.id)
+    return `<div class="splitrow"><button class="btn sm" data-split-open="1" title="Split into two parts — each gets its own answer">Split…</button>
+      <span class="hint" style="margin:0">shared with your partner, or part business</span></div>`;
+  const [a,b]=splitAmounts(t.amt,50,t.cur);
+  return `<div class="splitrow open">
+    <button class="btn sm pri" data-split-go="50">50 / 50</button>
+    <span class="hint" style="margin:0">${fmtCur(a,t.cur)} + ${fmtCur(b,t.cur)}</span>
+    <span class="splitcustom">or <input type="number" id="splitPct" min="1" max="99" step="1" value="50">% first
+      <button class="btn sm" data-split-go="custom">Split</button></span>
+    <button class="btn sm" data-split-cancel="1">Cancel</button>
+  </div>`;
+}
+function splitTx(id,pct){
+  const bk=B(), i=bk.tx.findIndex(x=>x.id===id); if(i<0) return;
+  const t=bk.tx[i];
+  pct=Math.round(+pct); if(!(pct>=1&&pct<=99)){ toast("Pick a percentage between 1 and 99"); return; }
+  const amts=splitAmounts(t.amt,pct,t.cur);
+  const parts=amts.map((amt,k)=>{
+    const c={...t,id:t.id+"~"+(k+1),amt,cat:null,auto:false,
+      split:{of:t.id,part:k+1,n:2,pct:k?100-pct:pct,amt:t.amt}};
+    if(isTrack()){ c.kind=null; c.tax=null; c.line=null; }
+    delete c.noSheet; delete c.ref;
+    return c;
+  });
+  bk.tx.splice(i,1,...parts);
+  splitOpen=null; curId=parts[0].id; pickMode=null; pickQ=""; pickSel=0;
+  markDirty(); renderAll();
+  toast(`Split into ${fmtCur(amts[0],t.cur)} and ${fmtCur(amts[1],t.cur)} — answer each one`);
+}
+function joinSplit(of){
+  const bk=B();
+  const parts=bk.tx.filter(x=>x.split&&x.split.of===of);
+  if(!parts.length) return;
+  const first=parts[0];
+  const back={...first,id:of,amt:first.split.amt,cat:null,auto:false};
+  delete back.split;
+  if(isTrack()){ back.kind=null; back.tax=null; back.line=null; }
+  const i=bk.tx.indexOf(first);
+  bk.tx=bk.tx.filter(x=>!(x.split&&x.split.of===of));
+  bk.tx.splice(Math.min(i,bk.tx.length),0,back);
+  curId=of; resetPick(); markDirty(); renderAll();
+  toast("Joined back into one — answer it again");
 }
 /* ---- the sort screen as a fixed two-pane layout (wide screens) ----
    Left: the transaction being answered, and under it the whole queue. Right:
@@ -2988,22 +3107,42 @@ function wireCards(){
     toast(`Reading ${activeFY().label}`);
   }));
   $$("#rowList .pickopt").forEach(b=>b.addEventListener("click",()=>choose(b.dataset.pick)));
+  wireSplitInput();
+  $$("#rowList [data-split-open]").forEach(b=>b.addEventListener("click",e=>{ e.stopPropagation(); splitOpen=curId; renderList(); }));
+  $$("#rowList [data-split-cancel]").forEach(b=>b.addEventListener("click",e=>{ e.stopPropagation(); splitOpen=null; renderList(); focusPick(); }));
+  $$("#rowList [data-split-go]").forEach(b=>b.addEventListener("click",e=>{
+    e.stopPropagation();
+    splitTx(curId,b.dataset.splitGo==="custom"?($("#splitPct")||{}).value:50);
+  }));
+  $$("#rowList [data-split-join]").forEach(b=>b.addEventListener("click",e=>{ e.stopPropagation(); joinSplit(b.dataset.splitJoin); }));
+  $$("#rowList [data-scope]").forEach(b=>b.addEventListener("click",e=>{
+    e.stopPropagation(); lineScope=b.dataset.scope; pickQ=""; pickSel=0; renderList(); focusPick();
+  }));
   const rb=$("#ruleChk"); if(rb) rb.addEventListener("change",()=>{ruleOn=rb.checked;renderList();});
   const rl=$("#rowList [data-relearn]"); if(rl) rl.addEventListener("click",()=>{pickMode="line";pickQ="";pickSel=0;renderList();focusPick();});
   const pi=$("#pickInput");
   if(pi){
     pi.addEventListener("input",()=>{pickQ=pi.value;pickSel=0;renderList();focusPick();});
-    focusPick();
+    if(!$("#splitPct")) focusPick();
   }
 }
+function wireSplitInput(){
+  const sp=$("#splitPct"); if(!sp) return;
+  sp.focus(); sp.select();
+  sp.addEventListener("keydown",e=>{
+    if(e.key==="Enter"){ e.preventDefault(); splitTx(curId,sp.value); }
+    if(e.key==="Escape"){ e.preventDefault(); splitOpen=null; renderList(); }
+  });
+}
 function focusPick(){
+  if($("#splitPct")) return;               // the split form has the keyboard
   const pi=$("#pickInput");
   if(pi&&document.activeElement!==pi){ pi.focus(); pi.setSelectionRange(pi.value.length,pi.value.length); }
 }
 /* A rule is opt-in, every time. It used to default on, which is how one
    Gojek answer — food, that day — quietly became every Gojek ride after it.
    Nothing is carried forward unless it is asked for. */
-function resetPick(){ pickQ=""; pickSel=0; pickMode=null; ruleOn=false; }
+function resetPick(){ pickQ=""; pickSel=0; pickMode=null; ruleOn=false; lineScope=null; splitOpen=null; }
 
 /* ---------- the three answers ---------- */
 function setKind(kind){
@@ -3035,12 +3174,14 @@ function choose(key){
   if(lineMode(t)){
     if(!TRK[key]) return;
     t.line=key; t.auto=false;
-    if(t.tax) S.lineFor[t.tax]=key;              // learned: this category lands on this line
+    /* learned: this category lands on this line — business lines only, so one
+       deduction tracked as personal spending doesn't become the default. */
+    if(t.tax&&TRK[key].scope==="business") S.lineFor[t.tax]=key;
     pickMode=null;
     applyRule(t,{k:t.kind,l:t.line,t:t.tax});
     advance(nextId); return;
   }
-  if(t.kind==="personal"&&key==="x_personal_in"){
+  if(t.kind==="personal"&&(key==="x_personal_in"||key==="x_partner")){
     t.kind="exclude"; t.tax=key; t.line=null; t.auto=false;
     applyRule(t,{k:"exclude",l:null,t:key});
     advance(nextId); return;
@@ -3991,6 +4132,10 @@ document.addEventListener("keydown",e=>{
   if(e.key==="Backspace"&&!pickQ){ e.preventDefault(); unassign(); return; }
 
   /* The three answers, while nothing is typed into the picker. */
+  /* S opens the split form, before an answer is started. */
+  if(!pickQ&&!pickMode&&(e.key==="s"||e.key==="S")&&t&&!t.split){
+    e.preventDefault(); splitOpen=t.id; renderList(); return;
+  }
   if(isTrack()&&!pickQ&&/^[pbtonr]$/i.test(e.key)){
     const k=e.key.toLowerCase();
     if(k==="r"){ e.preventDefault(); ruleOn=!ruleOn; renderList(); return; }

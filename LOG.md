@@ -4,6 +4,43 @@ What was built, when, and what you'd need to know to change it. Newest first.
 
 ---
 
+## 30 September 2026 — Personal lines for a business expense, and splitting
+
+**"A button that can switch back to the personal list even when logging
+something as an ATO business expense — only sometimes required."**
+
+The second question on a business expense (the green "Your sheets" box) has a
+**Business lines | Personal lines** switch (`scopeSwitch`, `lineScope` in
+`part_c4.js`). Personal lines keeps the row a business deduction — the ATO
+category stays — but puts it on a personal Budget Tracker line. The choice is
+remembered per merchant: the next row from the same merchant opens on the same
+side with the same line suggested (`scopeFor`, `lineGuess(t, want, scope)`). A
+personal line is never learned as the default line for an ATO category
+(`S.lineFor` only takes business lines). No switch on money in — the personal
+blocks are all spending lines. `test/scope.test.mjs`.
+
+**"A function where I can split a transaction — 50% for when it's a shared cost
+with my partner, or a partial business expense and some personal."**
+
+**Split…** under Make a rule (or **S** before answering) opens: **50 / 50**, or
+a percentage for the first part. `splitTx` replaces the row with two parts —
+same date, description and account, amounts that add back to the original to
+the cent (the second takes the rounding; whole units for IDR/JPY/KRW/VND) — and
+opens the first to answer. Each part is sorted on its own and shows a
+"split 50%" chip. A part's card has **Join back** (`joinSplit`), which restores
+the original as one unanswered row.
+
+- New category `x_partner`, "Partner's share — not recorded": off both sheets
+  and the return. Offered first when a split part is answered Personal, and in
+  Other.
+- Re-importing the statement doesn't bring the original back: `knownIds()`
+  counts a split's original id as loaded (used by the preview and `addParsed`).
+
+`test/split.test.mjs` covers the form, the arithmetic, the partner's share
+reaching neither sheet, re-import, join back and a 70/30 rupiah split.
+
+---
+
 ## 30 September 2026 — MISC PAYMENTS · Other
 
 "I need an option in here for other." The seed has had MISC PAYMENTS → Debt
