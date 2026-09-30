@@ -4,6 +4,23 @@ What was built, when, and what you'd need to know to change it. Newest first.
 
 ---
 
+## 30 September 2026 — One place for the transaction
+
+"This part can now be removed since it's duplicated below, which is easier to
+read."
+
+In the two-pane layout the card at the top of the left pane no longer repeats
+the date, description, amount and chips — it is only the answers, headed
+"Answer the highlighted row". What it used to carry that the queue row didn't
+(the account, the "in FY …" chip, the FX conversion note) moved onto the
+highlighted row itself, which now shows the full description (no ellipsis).
+`activeParts` returns `meta` for this; `queueRow(t, meta)` draws the expanded
+row. The narrow single-column layout is unchanged.
+
+`fy.test.mjs` looks for the year chip anywhere in the list.
+
+---
+
 ## 30 September 2026 — The sort screen as two fixed panes
 
 "Now put the full transaction list I am working through listed under here so it

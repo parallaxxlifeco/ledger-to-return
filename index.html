@@ -392,6 +392,10 @@ em.chip-none{background:var(--warnsoft);color:var(--warn);font-style:normal;font
 .splitmode .kindrow{grid-template-columns:1fr 1fr}
 .splitmode .rulebox{white-space:normal;align-items:flex-start;padding:6px 10px}
 .splitmode .rulebox input{margin-top:3px}
+.anshead{font-size:10.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--accent)}
+.queue .txcard.qcur .line2{padding-left:82px;min-height:0;margin-top:2px}
+.queue .txcard.qcur .fx{padding-left:82px;color:var(--ink2)}
+.queue .txcard.qcur .line1 .desc{white-space:normal}
 .qhead{font-size:10.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--ink3);
   display:flex;justify-content:space-between;padding:4px 2px 0}
 .qhead span{font-family:"IBM Plex Mono",monospace;letter-spacing:0}
@@ -2902,7 +2906,10 @@ function activeParts(t){
     </div>
     <div class="line2"><span class="acct">${esc(t.acct)}</span>${chips(t)}${fyChip}</div>
     ${note}`;
-  return {head,body,right};
+  /* What the queue's highlighted row carries in the two-pane layout, where the
+     card itself is only the answers. */
+  const meta=`<div class="line2"><span class="acct">${esc(t.acct)}</span>${chips(t)}${fyChip}</div>${note}`;
+  return {head,body,right,meta};
 }
 /* ---- the sort screen as a fixed two-pane layout (wide screens) ----
    Left: the transaction being answered, and under it the whole queue. Right:
@@ -2913,7 +2920,14 @@ const SPLIT_MIN=900;
 const splitMode=()=>window.innerWidth>=SPLIT_MIN;
 /* One line per transaction; the chips only once there is an answer to show —
    "Not sorted" on every row of a to-sort list says nothing. */
-function queueRow(t){
+function queueRow(t,meta){
+  if(meta) return `<div class="txcard q qcur${settled(t)?" done":""}" data-id="${t.id}">
+    <div class="line1">
+      <span class="d">${niceDate(t.date)}</span>
+      <span class="desc">${esc(t.desc)}</span>
+      ${money(t)}
+    </div>${meta}
+  </div>`;
   const c=chips(t);
   return `<div class="txcard q${settled(t)?" done":""}${t.id===curId?" qcur":""}" data-id="${t.id}">
     <div class="line1">
@@ -2930,13 +2944,15 @@ function rightPlaceholder(t){
 }
 function renderSplit(el,seq,more){
   const t=seq.find(x=>x.id===curId);
-  const {head,body,right}=activeParts(t);
+  const {body,right,meta}=activeParts(t);
   const q=el.querySelector(".queue"), keep=q?q.scrollTop:0;
   el.classList.add("splitmode");
+  /* The card is only the answers here: the transaction itself is the
+     highlighted row in the queue, where it reads in line with the rest. */
   el.innerHTML=`<div class="sortleft">
-      <div class="txcard cur" data-id="${t.id}">${head}${body}</div>
+      <div class="txcard cur answers" data-id="${t.id}"><div class="anshead">Answer the highlighted row</div>${body}</div>
       <div class="qhead">${filter==="todo"?"Still to sort":"In this view"} <span>${seq.length}${more?"+":""}</span></div>
-      <div class="queue">${seq.map(queueRow).join("")}${more?`<div class="empty" style="padding:14px">Showing the first 250. Clear these and the rest come up.</div>`:""}</div>
+      <div class="queue">${seq.map(x=>queueRow(x,x.id===t.id?meta:null)).join("")}${more?`<div class="empty" style="padding:14px">Showing the first 250. Clear these and the rest come up.</div>`:""}</div>
     </div>
     <div class="sortright">${right||rightPlaceholder(t)}</div>`;
   wireCards();

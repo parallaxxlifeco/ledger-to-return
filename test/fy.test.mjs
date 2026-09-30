@@ -68,20 +68,20 @@ const note = await p.evaluate(() => {
   /* it was just answered, so it has left the To sort list */
   filter = 'all'; curId = 'j'; renderList();
   /* A chip on the account line since the card was made compact. */
-  const el = document.querySelector('.txcard.cur .fychip');
+  const el = document.querySelector('#rowList .fychip');
   return {text: el ? el.innerText.replace(/\s+/g, ' ') : null,
-          button: !!document.querySelector('.txcard.cur [data-fy]')};
+          button: !!document.querySelector('#rowList [data-fy]')};
 });
 check('it names the year the row belongs to', /FY 2024–25/.test(note.text || ''), note.text);
 check('it does not call it a problem', !/Outside|warning/i.test(note.text || ''), note.text);
 check('and offers one click to go there', note.button);
 
-await p.click('.txcard.cur [data-fy]');
+await p.click('#rowList [data-fy]');
 await p.waitForTimeout(250);
 const after = await p.evaluate(() => ({
   active: activeFY().label,
   header: document.querySelector('#fyTop')?.value,
-  note: document.querySelector('.txcard.cur .fychip')?.innerText || '',
+  note: document.querySelector('#rowList .fychip')?.innerText || '',
 }));
 check('clicking it switches the year', after.active === 'FY 2024–25', after.active);
 check('the header control follows', after.header === 'fy2425', String(after.header));
