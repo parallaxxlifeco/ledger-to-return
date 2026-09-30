@@ -151,6 +151,11 @@ const ret = await p.evaluate(() => {
 check('Stripe sales add nothing to income on the return', near(ret.income, 0) && !ret.reportedOnReturn, `${ret.income}`);
 check('and are listed as kept off it', ret.listedAsOff);
 check('Stripe fees are on the return as a deduction: 38.98', near(ret.bank, -38.98), `${ret.bank}`);
+const box = await p.evaluate(() => { renderAll(); go('report');
+  const el = document.querySelector('.stat.info'); return {text: el ? el.innerText.replace(/\s+/g, ' ') : null, income: reportData().totalIncome}; });
+check('the report shows Stripe income in a box of its own, marked as outside the totals',
+  box.text && /Stripe income/i.test(box.text) && /\$200/.test(box.text) && /not in these totals/.test(box.text), box.text);
+check('and business income still leaves it out', near(box.income, 0), String(box.income));
 
 /* ---------------- other shapes ---------------- */
 console.log('\nOTHER SHAPES:');

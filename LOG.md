@@ -4,6 +4,38 @@ What was built, when, and what you'd need to know to change it. Newest first.
 
 ---
 
+## 30 September 2026 — Stripe on the report, and categories that open up
+
+**"Another box … that provides the Stripe totals too — just for display
+purposes … but not added into the reports that will cause duplication on the
+ATO end."**
+
+The report's summary row has a fifth box, **Stripe income · ATO has it**: the
+FY total of `x_income_reported` rows (sales less refunds), the count, and
+business income + Stripe for the full picture. It is dashed and labelled "not
+in these totals" — business income, net before tax, the category tables, the
+schedule roll-up and the CSVs are all unchanged. Shown only when there are
+Stripe rows in the year.
+
+**"Make the field clickable to create an expandable section to see what the
+transactions are … if I find one that is wrong, include a button to change."**
+
+Every row in the Income and Expenses tables opens (▸ / ▾) to list its
+transactions — date, description, account, sheet line, AUD, and a ↩ on money
+going the other way (a refund in an expense category). Open sections stay open
+across re-renders (`repOpen`); 300 shown at most, the CSV has the rest.
+
+**Change** on a transaction (`reassign` in `part_c4.js`) goes to Sort with
+that row open and its category list ready (`pickMode="recode"`; filters
+cleared so it is visible). Once it is fully answered, `advance` takes you
+straight back to the report at the same scroll position — only for that row;
+anything else resumes normal sorting.
+
+Tests: `stripe.test.mjs` checks the box and that income still excludes it;
+`test/report.test.mjs` covers opening, Change, and coming back.
+
+---
+
 ## 30 September 2026 — Personal lines for a business expense, and splitting
 
 **"A button that can switch back to the personal list even when logging

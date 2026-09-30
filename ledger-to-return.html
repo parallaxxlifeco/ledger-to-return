@@ -457,6 +457,17 @@ tr.subtotal td:first-child{background:var(--raise)}
 
 /* ---------- report ---------- */
 .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));gap:12px}
+/* Report categories open up to show their transactions. */
+tr.catrow{cursor:pointer}
+tr.catrow:hover td{background:var(--raise)}
+tr.catrow .caret{display:inline-block;width:12px;color:var(--ink3);font-size:11px}
+tr.catrow.open td{background:var(--surface2);font-weight:600}
+tr.catdetail>td{background:var(--surface2);padding-top:0}
+table.inner td,table.inner th{font-size:12px;padding:5px 8px}
+@media print{tr.catrow .caret{display:none}}
+/* A figure for information only — outside every total. */
+.stat.info{border-style:dashed;background:color-mix(in srgb,var(--income) 5%,var(--surface))}
+.stat.info .v{color:var(--income);opacity:.8}
 .stat{background:var(--surface);border:1px solid var(--line);border-radius:9px;padding:13px 15px}
 .stat .v{font-family:"IBM Plex Mono",monospace;font-size:21px;font-weight:600;letter-spacing:-.02em;margin-top:5px}
 .stat.income .v{color:var(--income)}
@@ -3234,7 +3245,30 @@ function applyRule(t,rule){
     (extra?`${extra} more like “${t.mk}” done too`:`Rule saved`)+
     (skipped?` · ${skipped} left for you — ${skipped===1?"it goes":"they go"} the other way`:""));
 }
+/* Opened from the report to correct one transaction: once it is answered, go
+   straight back to the report rather than on to the next row. */
+let backToReport=null, backScroll=0;
+function reassign(id){
+  const t=B().tx.find(x=>x.id===id); if(!t) return;
+  backToReport=id; backScroll=window.scrollY;
+  filter="all"; listQ=""; acctQ="";
+  if($("#listSearch")) $("#listSearch").value="";
+  if($("#acctFilter")) $("#acctFilter").value="";
+  $$("#filterChips .chip").forEach(c=>c.setAttribute("aria-pressed",String(c.dataset.f==="all")));
+  curId=id; resetPick();
+  pickMode=(isTrack()&&!t.kind)||t.kind==="transfer"?null:"recode";
+  go("sort"); renderList();
+  toast("Pick the right answer — you'll go back to the report");
+}
 function advance(nextId){
+  if(backToReport){
+    const was=backToReport; backToReport=null;
+    if(was===curId){                       // only for the row the report sent here
+      resetPick(); go("report"); window.scrollTo(0,backScroll);
+      toast("Changed");
+      return;
+    }
+  }
   curId=nextId||null;
   resetPick(); renderList();
 }
@@ -3534,14 +3568,35 @@ function actualsCsv(year){
   return L.join("\n");
 }
 
+/* Which categories are opened up in the report, so a re-render keeps them open. */
+const repOpen=new Set();
+/* The transactions behind one category, each with a way to change it. */
+function catDetail(b){
+  const rows=[...b.rows].sort((x,y)=>x.date<y.date?-1:x.date>y.date?1:0);
+  const cap=rows.slice(0,300);
+  const tr=cap.map(t=>`<tr>
+      <td class="mono" style="white-space:nowrap">${niceDate(t.date)}</td>
+      <td>${esc(t.desc)}${t.split?` <em class="chip-split">split ${t.split.pct}%</em>`:""}</td>
+      <td class="mono" style="font-size:11px;color:var(--ink3)">${esc(t.acct)}</td>
+      ${isTrack()?`<td style="font-size:11.5px;color:var(--ink2)">${t.line&&TRK[t.line]?esc(lineLabel(t.line)):t.noSheet?"return only":"—"}</td>`:""}
+      <td class="r mono">${t.aud==null?"—":fmtAUD(Math.abs(t.aud))}${t.aud!=null&&((b.cat.kind==="income")!==(t.aud>=0))?` <span title="Money the other way — it reduces this total" style="color:var(--warn)">↩</span>`:""}</td>
+      <td class="r noprint"><button class="btn sm" data-reassign="${esc(t.id)}">Change</button></td></tr>`).join("");
+  return `<tr class="catdetail"><td colspan="5">
+    <div class="tablewrap" style="margin:4px 0 8px"><table class="inner">
+      <thead><tr><th>Date</th><th>Description</th><th>Account</th>${isTrack()?"<th>Sheet line</th>":""}<th class="r">AUD</th><th class="noprint"></th></tr></thead>
+      <tbody>${tr}</tbody></table></div>
+    ${rows.length>300?`<p class="hint" style="margin:0 0 8px">Showing the first 300 of ${rows.length}. The All transactions CSV has every one.</p>`:""}
+  </td></tr>`;
+}
 function catTable(list,sign){
   const tot=list.reduce((s,b)=>s+Math.abs(b.aud),0);
-  const body=list.sort((a,b)=>Math.abs(b.aud)-Math.abs(a.aud)).map(b=>`<tr>
-    <td>${esc(b.cat.label)}</td>
+  const body=list.sort((a,b)=>Math.abs(b.aud)-Math.abs(a.aud)).map(b=>`<tr class="catrow${repOpen.has(b.cat.key)?" open":""}" data-cat="${b.cat.key}" title="Show the ${b.n} transaction${b.n===1?"":"s"} in ${esc(b.cat.label)}">
+    <td><span class="caret" aria-hidden="true">${repOpen.has(b.cat.key)?"▾":"▸"}</span> ${esc(b.cat.label)}</td>
     <td style="color:var(--ink3);font-size:11.5px">${esc(b.cat.ato)}</td>
     <td class="r mono">${b.n}</td>
     <td class="r mono" style="color:var(--ink3)">${tot?(Math.abs(b.aud)/tot*100).toFixed(1)+"%":"—"}</td>
-    <td class="r mono" style="font-weight:500${sign==="+"?";color:var(--income)":""}">${fmtAUD(Math.abs(b.aud))}</td></tr>`).join("");
+    <td class="r mono" style="font-weight:500${sign==="+"?";color:var(--income)":""}">${fmtAUD(Math.abs(b.aud))}</td></tr>${
+    repOpen.has(b.cat.key)?catDetail(b):""}`).join("");
   return `<div class="tablewrap"><table>
     <thead><tr><th>Category</th><th>Goes to</th><th class="r">Items</th><th class="r">Share</th><th class="r">AUD</th></tr></thead>
     <tbody>${body||`<tr><td colspan="5" class="hint">Nothing in this group yet.</td></tr>`}</tbody>
@@ -3709,6 +3764,15 @@ function renderTaxReport(){
 
     <div class="stats">
       <div class="stat income"><span class="lbl">Business income</span><div class="v">${fmtAUD0(d.totalIncome)}</div><div class="sub">${d.income.reduce((s,b)=>s+b.n,0)} items</div></div>
+      ${(()=>{
+        /* Stripe sales, shown for the whole picture but in no total: the ATO
+           already has them from Stripe, so adding them here would count them
+           twice on the return. */
+        const r=d.byCat.x_income_reported; if(!r||!r.n) return "";
+        return `<div class="stat info" title="Shown for the full picture only. Stripe reports these sales to the ATO itself, so they are not in business income, net, or any total on this report.">
+          <span class="lbl">Stripe income · ATO has it</span><div class="v">${fmtAUD0(r.aud)}</div>
+          <div class="sub">${r.n} items · not in these totals<br>with business income: ${fmtAUD0(d.totalIncome+r.aud)}</div></div>`;
+      })()}
       <div class="stat"><span class="lbl">Business expenses</span><div class="v">${fmtAUD0(d.totalExpense)}</div><div class="sub">${d.expense.reduce((s,b)=>s+b.n,0)} items</div></div>
       <div class="stat"><span class="lbl">Net before tax</span><div class="v" style="color:${net<0?"var(--crit)":"var(--ink)"}">${fmtAUD0(net)}</div><div class="sub">income less expenses</div></div>
       <div class="stat"><span class="lbl">Left out</span><div class="v" style="color:var(--ink3)">${d.excluded.reduce((s,b)=>s+b.n,0)}</div><div class="sub">personal, transfers, drawings</div></div>
@@ -3750,6 +3814,11 @@ function renderTaxReport(){
     <p class="hint" style="margin-top:22px;font-size:11.5px">Generated ${new Date().toLocaleDateString("en-AU",{day:"numeric",month:"long",year:"numeric"})}. A working summary for your accountant, not tax advice.</p>
   `;
   if($("#fyPick")) $("#fyPick").addEventListener("change",e=>{S.taxFy=e.target.value;markDirty();renderReport();});
+  $$("#reportInner .catrow").forEach(r=>r.addEventListener("click",()=>{
+    const k=r.dataset.cat; repOpen.has(k)?repOpen.delete(k):repOpen.add(k);
+    const y=window.scrollY; renderReport(); window.scrollTo(0,y);
+  }));
+  $$("#reportInner [data-reassign]").forEach(bt=>bt.addEventListener("click",e=>{ e.stopPropagation(); reassign(bt.dataset.reassign); }));
   $("#bizName").addEventListener("input",e=>{B().biz.name=e.target.value;markDirty();});
   $("#bizAbn").addEventListener("input",e=>{B().biz.abn=e.target.value;markDirty();});
   $("#btnPrint").addEventListener("click",()=>window.print());
