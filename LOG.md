@@ -4,6 +4,43 @@ What was built, when, and what you'd need to know to change it. Newest first.
 
 ---
 
+## 30 September 2026 — The 2026 CommBank print engine
+
+"I am still getting this error while trying to upload statements from Commbank"
+— Statement20260610.pdf and Statement20260311.pdf: "not a statement this can
+read yet".
+
+From early 2026 CommBank's statements come out of a new print engine (the PDF
+says OpenText Output Transformation Engine 25.2). Its font maps the decimal
+point to a space in the text layer, so every figure reads "27 82" for 27.82 and
+"$5,321 09" for $5,321.09 — in pdf.js, and in pdftotext too, so it is the file
+and not the reader. No figure matched, and the statement was refused.
+
+- `CBA_AMT` in `part_c2c.js`: digits, then a point **or a space**, then exactly
+  two digits. It can't swallow a merchant name ending in a number — the cents
+  are always two digits and last, and a whole-dollar part is always printed.
+  Used for rows, FX lines and the summary totals. `cbaNum` / `cbaFig` turn
+  either form into a number.
+- The same tolerance in the bank-account reader, for when the Saver statements
+  come out of the new engine too.
+- The FX line runs the currency name on: "16 50EURO NATL CURR U". Matched by
+  prefix against `CBA_CUR`.
+- **Interest.** The March statement charged $67.04 interest on purchases. It is
+  printed in the summary with no date ("Interest charged on purchases Purchase
+  Rate 20 990%p a 67 04") and it is in the charges total, so without it the
+  statement was $67.04 short. `CBA_INT` reads both interest lines as rows dated
+  the last day of the period; $0.00 ones drop out with the zeros.
+
+His March 2026 statement: 67 rows, charges $9,052.31 and payments $5,350.00
+matching the printed totals, $5,321.09 → $9,023.40. The July 2025 statement
+still balances; it has two $0.00 interest lines, so `pdf.test.mjs` now expects
+127 rows in the file (68 after zeros, unchanged).
+
+`account.test.mjs` has a "2026 card layout" section and a spaced Saver check,
+both synthetic.
+
+---
+
 ## 30 September 2026 — Which book a pick list is for
 
 "I am getting a bit confused in which log I am listing for … Can you make it

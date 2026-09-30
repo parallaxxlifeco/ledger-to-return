@@ -15,7 +15,7 @@ should give:
 
 | | |
 |---|---|
-| rows in the file | 125 |
+| rows in the file (incl. two $0.00 interest lines) | 127 |
 | rows left after zero-dollar lines are dropped | 68 |
 | charges | $9,832.23 |
 | payments and refunds | $8,985.18 |

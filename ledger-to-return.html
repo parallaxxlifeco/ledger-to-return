@@ -1203,9 +1203,19 @@ const CBA_CUR={"RUPIAH":"IDR","US DOLLAR":"USD","EURO":"EUR","NZ DOLLAR":"NZD",
 
 /* A charge line: "11 Jun  Crossfit Wanderlust Fi Badung  14.03". The amount is
    whatever decimal ends the line; a credit carries a TRAILING minus. */
-const CBA_ROW=/^(\d{1,2}) (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) +(.+?) +([\d,]+\.\d{2})(-?)$/;
+/* From early 2026 CommBank's statements come out of a new print engine whose
+   font maps the decimal point to a space in the text layer — "27 82" for 27.82,
+   "$5,321 09" for $5,321.09 — in pdf.js and in every other reader. So a figure
+   is digits, then a point OR a space, then exactly two digits. That can't be
+   confused with a merchant name that ends in a number: the cents are always
+   two digits and always last, and a whole-dollar part is always printed. */
+const CBA_AMT="([\\d,]+)[. ](\\d{2})";
+const cbaNum=(a,c)=>num(a+"."+c);
+const cbaFig=s=>num(String(s).replace(/ (\d{2})$/,".$1"));   // "6,004 64" -> 6004.64
+const CBA_ROW=new RegExp("^(\\d{1,2}) (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) +(.+?) +"+CBA_AMT+"(-?)$");
 /* The foreign amount sits on its own line and belongs to the row above it. */
-const CBA_FX=/^##\d+ +([\d,]+\.\d{2}) ?([A-Z][A-Z ]+?)$/;
+const CBA_INT=new RegExp("^Interest charged on (purchases|cash advances)\\b.*? "+CBA_AMT+"$");
+const CBA_FX=new RegExp("^##\\d+ +"+CBA_AMT+" ?([A-Z][A-Z ]+?)$");
 const CBA_PERIOD=/Statement Period +(\d{1,2}) (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) (\d{4}) *- *(\d{1,2}) (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) (\d{4})/;
 
 const num=s=>parseFloat(String(s).replace(/,/g,""));
@@ -1238,17 +1248,28 @@ function readCbaCard(lines){
     const m=CBA_ROW.exec(line);
     if(m){
       const d=dateFor(+m[1],m[2]);
-      const v=num(m[4]);
+      const v=cbaNum(m[4],m[5]);
       /* A charge costs money, so it is negative here; a payment or refund is
          positive. The statement prints both unsigned. */
-      rows.push({date:iso(d),desc:m[3].trim(),aud:m[5]?v:-v,cur:"",orig:""});
+      rows.push({date:iso(d),desc:m[3].trim(),aud:m[6]?v:-v,cur:"",orig:""});
+      continue;
+    }
+    /* Interest is charged in the summary at the end, with no date of its own —
+       "Interest charged on purchases Purchase Rate 20.99%p.a. 67.04". It is in
+       the statement's charges total, so it has to be a row: it lands on the
+       last day of the period. A $0.00 line drops out with the waived fees. */
+    const it=CBA_INT.exec(line);
+    if(it){
+      rows.push({date:iso(end),desc:"Interest charged on "+it[1],aud:-cbaNum(it[2],it[3]),cur:"",orig:""});
       continue;
     }
     const f=CBA_FX.exec(line);
     if(f&&rows.length){
-      const name=f[2].trim();
-      rows[rows.length-1].cur=CBA_CUR[name]||name;
-      rows[rows.length-1].orig=num(f[1]);
+      /* The new engine also runs the currency name on: "EURO NATL CURR U". */
+      const name=f[3].trim();
+      const key=Object.keys(CBA_CUR).find(k=>name===k||name.startsWith(k+" "));
+      rows[rows.length-1].cur=key?CBA_CUR[key]:name;
+      rows[rows.length-1].orig=cbaNum(f[1],f[2]);
     }
   }
   if(!rows.length) return null;
@@ -1256,11 +1277,11 @@ function readCbaCard(lines){
   /* The statement prints its own arithmetic. If the rows read here do not
      reproduce it, something was missed or double counted, and the import says
      so rather than quietly loading a wrong year. */
-  const grab=re=>{ const m=re.exec(all); return m?num(m[1]):null; };
-  const opening =grab(/Opening balance at [^$]*\$([\d,]+\.\d{2})/);
-  const charges =grab(/New transactions and charges +\$([\d,]+\.\d{2})/);
-  const payments=grab(/Payments\/refunds +-\$([\d,]+\.\d{2})/);
-  const closing =grab(/Closing balance at [^$]*\$([\d,]+\.\d{2})/);
+  const grab=re=>{ const m=re.exec(all); return m?cbaNum(m[1],m[2]):null; };
+  const opening =grab(new RegExp("Opening balance at [^$]*\\$"+CBA_AMT));
+  const charges =grab(new RegExp("New transactions and charges +\\$"+CBA_AMT));
+  const payments=grab(new RegExp("Payments/refunds +-\\$"+CBA_AMT));
+  const closing =grab(new RegExp("Closing balance at [^$]*\\$"+CBA_AMT));
   const gotCh =Math.round(-rows.filter(r=>r.aud<0).reduce((s,r)=>s+r.aud,0)*100)/100;
   const gotPay=Math.round( rows.filter(r=>r.aud>0).reduce((s,r)=>s+r.aud,0)*100)/100;
   const near=(a,b)=>a!=null&&b!=null&&Math.abs(a-b)<0.005;
@@ -1287,7 +1308,7 @@ function readCbaCard(lines){
    checked against that movement, and the whole statement against its own
    "Opening − Total debits + Total credits = Closing" line. */
 const CBA_ACCT_PERIOD=/(?:^|\s)Period (\d{1,2}) (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) (\d{4}) *- *(\d{1,2}) (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) (\d{4})/;
-const CBA_BAL=/\$ ?([\d,]+\.\d{2}) (CR|DR)$/;          // the balance that ends a row
+const CBA_BAL=/\$ ?([\d,]+[. ]\d{2}) (CR|DR)$/;          // the balance that ends a row
 const CBA_DAY=/^(\d{1,2}) (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)(?: |$)(.*)$/;
 const CBA_PRODUCTS=/\b(NetBank Saver|GoalSaver|Smart Access|Complete Access|Everyday Offset|Streamline Basic|Business Transaction Account|Business Online Saver|Business Everyday|Pensioner Security|Wealth Package|Standard Variable Rate Home Loan)\b/;
 
@@ -1302,7 +1323,7 @@ function readCbaAccount(lines){
   const last4=accNo?accNo[1].replace(/\D/g,"").slice(-4):"";
   const prod=CBA_PRODUCTS.exec(all);
   const acct="CommBank "+(prod?prod[1]:"account")+(last4?" "+last4:"");
-  const signed=(v,cd)=>cd==="DR"?-num(v):num(v);
+  const signed=(v,cd)=>cd==="DR"?-cbaFig(v):cbaFig(v);
   const dateFor=(day,mon)=>{
     for(const y of [start.getFullYear(),end.getFullYear()]){
       const d=new Date(y,CBA_MON[mon],day);
@@ -1311,8 +1332,8 @@ function readCbaAccount(lines){
     return new Date(start.getFullYear(),CBA_MON[mon],day);
   };
   const r2=n=>Math.round(n*100)/100;
-  const opening=(/OPENING BALANCE \$ ?([\d,]+\.\d{2}) (CR|DR)/.exec(all));
-  const closing=(/CLOSING BALANCE \$ ?([\d,]+\.\d{2}) (CR|DR)/.exec(all));
+  const opening=(/OPENING BALANCE \$ ?([\d,]+[. ]\d{2}) (CR|DR)/.exec(all));
+  const closing=(/CLOSING BALANCE \$ ?([\d,]+[. ]\d{2}) (CR|DR)/.exec(all));
   if(!opening||!closing) return null;
   let bal=signed(opening[1],opening[2]);
   const rows=[];let pending=null,mismatch=0;
@@ -1333,8 +1354,8 @@ function readCbaAccount(lines){
     /* The row ends here. What sits between the words and the balance is the
        printed debit or credit, with the other column's stray "$". */
     const head=text.slice(0,b.index);
-    const figs=[...head.matchAll(/([\d,]+\.\d{2})/g)].map(m=>num(m[1]));
-    const words=head.replace(/\$ ?[\d,]+\.\d{2}|[\d,]+\.\d{2}|\$/g," ");
+    const figs=[...head.matchAll(/([\d,]+[. ]\d{2})(?!\d)/g)].map(m=>cbaFig(m[1]));
+    const words=head.replace(/\$ ?[\d,]+[. ]\d{2}(?!\d)|[\d,]+\.\d{2}|\$/g," ");
     const now=signed(b[1],b[2]);
     const amt=r2(now-bal);
     if(!figs.length||Math.abs(Math.abs(amt)-figs[figs.length-1])>0.005) mismatch++;
@@ -1346,8 +1367,8 @@ function readCbaAccount(lines){
   if(!rows.length) return null;
   /* "Opening balance - Total debits + Total credits = Closing balance", then
      the four figures on the next line. */
-  const tot=/Total debits \+ Total credits = Closing balance\n\$ ?[\d,]+\.\d{2} (?:CR|DR) \$ ?([\d,]+\.\d{2}) \$ ?([\d,]+\.\d{2})/.exec(all);
-  const charges =tot?num(tot[1]):null, payments=tot?num(tot[2]):null;
+  const tot=/Total debits \+ Total credits = Closing balance\n\$ ?[\d,]+[. ]\d{2} (?:CR|DR) \$ ?([\d,]+[. ]\d{2}) \$ ?([\d,]+[. ]\d{2})/.exec(all);
+  const charges =tot?cbaFig(tot[1]):null, payments=tot?cbaFig(tot[2]):null;
   const gotCh =r2(-rows.filter(r=>r.aud<0).reduce((s,r)=>s+r.aud,0));
   const gotPay=r2( rows.filter(r=>r.aud>0).reduce((s,r)=>s+r.aud,0));
   const near=(a,b)=>a!=null&&b!=null&&Math.abs(a-b)<0.005;

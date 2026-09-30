@@ -78,6 +78,48 @@ check('a balance that does not follow is caught', r.tamperedOk === false);
 check('a card statement is not taken for an account one', r.card === null);
 check('the card reader is still tried first', r.viaReaders[0] === 'cba-card' && r.viaReaders[1] === 'cba-account');
 
+/* ---------------- the 2026 card layout ---------------- */
+/* From early 2026 CommBank's print engine maps the decimal point to a space in
+   the text layer — "27 82" for 27.82 — and prints interest in the summary with
+   no date. Shaped exactly as pdfLines() returns his March 2026 card statement;
+   every figure and name here is invented. */
+const CARD26 = [
+  'Your Statement', 'Ultimate Awards Credit Card', 'Page 1 of 4',
+  'Statement Period 11 Feb 2026 - 11 Mar 2026',
+  'Opening balance at 11 Feb $1,000 00', 'New transactions and charges $1,302 42',
+  'Payments/refunds -$500 00', 'Closing balance at 11 Mar $1,802 42',
+  'Transactions', '11 Feb 2026- 11 Mar 2026', 'Page 2 of 4',
+  'Date Transaction details Amount (A$)',
+  '11 Feb Bar Example Bansko 27 82', '##0000 16 50EURO NATL CURR U',
+  '11 Feb Intnl Transaction Fee 0 00', '$ 0 97 FEE SAVED',
+  '12 Feb Wix Com 1224025755 Luxembourg 1,200 00', '##0000 700 00EURO NATL CURR U',
+  '24 Feb Payment Received, Thank You 500 00-',
+  'Interest charged on purchases Purchase Rate 20 990%p a 74 60',
+  'Interest charged on cash advances Cash Advance Rate 21 990%p a 0 00',
+  'Helping you identify your regular payments',
+];
+const c = await p.evaluate(lines => {
+  const g = readCbaCard(lines);
+  return g && {rec: g.rec, rows: g.rows.map(x => ({date: x.date, aud: x.aud, desc: x.desc, cur: x.cur, orig: x.orig}))};
+}, CARD26);
+console.log('\nTHE 2026 CARD LAYOUT:');
+check('read at all — the decimal point that comes out as a space', !!c);
+check('"27 82" is 27.82, and "1,200 00" is 1,200.00',
+  c && c.rows.some(x => x.aud === -27.82) && c.rows.some(x => x.aud === -1200), c && c.rows.map(x => x.aud).join(', '));
+check('a merchant name ending in a number keeps it', c && c.rows.some(x => x.desc === 'Wix Com 1224025755 Luxembourg'));
+check('the foreign amount and its currency, from "16 50EURO NATL CURR U"',
+  c && c.rows.some(x => x.cur === 'EUR' && x.orig === 16.5));
+check('interest in the summary becomes a row on the last day', c && c.rows.some(x => x.desc === 'Interest charged on purchases' && x.aud === -74.6 && x.date === '2026-03-11'));
+check('a payment is money back', c && c.rows.some(x => x.aud === 500));
+check('and it balances against its own totals', c && c.rec.ok === true, c && JSON.stringify(c.rec));
+const spaced = await p.evaluate(lines => {
+  /* The same print engine on a Saver statement: every "1,402.00" becomes "1,402 00". */
+  const g = readCbaAccount(lines.map(l => l.replace(/(\d)\.(\d{2})\b/g, '$1 $2')));
+  return g && {ok: g.rec.ok, rows: g.rows.length, out: g.rec.gotCh, inn: g.rec.gotPay};
+}, LINES);
+check('a Saver statement from the new engine reads the same', spaced && spaced.ok && spaced.rows === 5 && spaced.out === 1000 && spaced.inn === 1060,
+  JSON.stringify(spaced));
+
 console.log(bad ? `\n${bad} CHECK(S) FAILED` : '\nAccount statements read correctly');
 console.log('PAGE ERRORS:', errs.length ? errs : 'none');
 await b.close();

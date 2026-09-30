@@ -19,7 +19,10 @@ const PDF = join(here, 'fixtures', 'cba-card-2025-07-09.pdf');
 
 /* what the statement says about itself, read off page 1 by eye */
 const SAYS = {opening: 673.48, charges: 9832.23, payments: 8985.18, closing: 1520.53,
-              rowsInFile: 125, rowsWorthSorting: 68};
+              /* 127 since the two interest lines ("Interest charged on
+                 purchases … 0.00") are read as rows too; both are $0.00 on this
+                 statement, so they drop out with the zeros. */
+              rowsInFile: 127, rowsWorthSorting: 68};
 
 /* The fixture is a real statement, so it is git-ignored and never published.
    See test/fixtures/README.md for how to put one back. */
