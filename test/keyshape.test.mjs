@@ -105,6 +105,20 @@ const inUse = await p.evaluate(() => {
 });
 check('a retired line with a transaction on it is kept', inUse);
 
+/* His saved list had lost MISC PAYMENTS · Other. It is put back once — and a
+   line deleted on purpose afterwards is not brought back. */
+const misc = await p.evaluate(() => {
+  const K = 'budget:misc-payments:expense:other';
+  TRACKS = TRACKS.filter(l => l.key !== K); indexTracks(); delete S.addedLines;
+  pruneRetired();
+  const back = TRACKS.filter(l => l.group === 'MISC PAYMENTS').map(l => l.label);
+  TRACKS = TRACKS.filter(l => l.key !== K); indexTracks();      // deleted on purpose
+  pruneRetired();
+  return {back, stays: !TRACKS.some(l => l.key === K)};
+});
+check('MISC PAYMENTS gets its Other line back, after Debt Carry Over', JSON.stringify(misc.back) === JSON.stringify(['Debt Carry Over', 'Other']), JSON.stringify(misc.back));
+check('once only — deleting it later keeps it deleted', misc.stays);
+
 console.log(bad ? `\n${bad} CHECK(S) FAILED` : '\none key shape, and the retired lines stay gone');
 console.log('PAGE ERRORS:', errs.length ? errs : 'none');
 await b.close();

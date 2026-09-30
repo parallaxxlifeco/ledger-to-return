@@ -1089,17 +1089,25 @@ function normaliseTrackKeys(){
 /* Lines added to the seed after he had a saved list. The saved list replaces
    the seed on load, so a new line never appears unless it is put in — here,
    straight after the line it follows in the seed. */
-const ADDED_LINES=[];
+/* MISC PAYMENTS · Other is in the seed but had gone missing from his saved list
+   (every other line matched), so there was no "Other" under MISC PAYMENTS.
+   Each key is put back once only — S.addedLines remembers it — so a line he
+   deletes on purpose later stays deleted. */
+const ADDED_LINES=["budget:misc-payments:expense:other"];
 function addNewLines(){
   const seed=seedTracks();
+  const done=new Set((S&&S.addedLines)||[]);
   let n=0;
   for(const key of ADDED_LINES){
+    if(done.has(key)) continue;
+    done.add(key);
     if(TRACKS.some(l=>l.key===key)) continue;
     const i=seed.findIndex(l=>l.key===key); if(i<0) continue;
     let at=TRACKS.length;
     for(let j=i-1;j>=0;j--){ const k=TRACKS.findIndex(l=>l.key===seed[j].key); if(k>-1){ at=k+1; break; } }
     TRACKS.splice(at,0,seed[i]); n++;
   }
+  if(S) S.addedLines=[...done];
   if(n){ indexTracks(); S.tracks=TRACKS; }
   return n;
 }

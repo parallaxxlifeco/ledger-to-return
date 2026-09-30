@@ -4,6 +4,22 @@ What was built, when, and what you'd need to know to change it. Newest first.
 
 ---
 
+## 30 September 2026 — MISC PAYMENTS · Other
+
+"I need an option in here for other." The seed has had MISC PAYMENTS → Debt
+Carry Over and Other all along, but his saved line list (which replaces the
+seed on load) had lost Other; it was the only seed line missing. Nothing was
+coded to it.
+
+`ADDED_LINES` now lists `budget:misc-payments:expense:other`, and
+`addNewLines()` puts it back after Debt Carry Over. It is **once only**:
+`S.addedLines` remembers every key it has handled, so a line he deletes in the
+lines editor later stays deleted rather than reappearing on the next load.
+
+`keyshape.test.mjs` checks both.
+
+---
+
 ## 30 September 2026 — One place for the transaction
 
 "This part can now be removed since it's duplicated below, which is easier to
