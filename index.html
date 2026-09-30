@@ -205,7 +205,7 @@ tbody tr:last-child td{border-bottom:0}
   border-color:var(--accent);border-left:5px solid var(--accent);
   background:color-mix(in srgb,var(--accent) var(--tintCur),var(--surface));
   box-shadow:0 0 0 4px var(--accentsoft),0 10px 26px -14px rgba(0,0,0,.55);cursor:default;
-  padding:14px 16px 14px 12px;gap:10px;
+  padding:10px 14px 11px 11px;gap:7px;
 }
 .txcard.cur .line1 .d{color:var(--ink2)}
 /* The account and the rate note are the faintest grey in the app. On the plain
@@ -248,10 +248,11 @@ em.chip-none{background:var(--warnsoft);color:var(--warn);font-style:normal;font
 .dot{display:inline-block;width:5px;height:5px;border-radius:50%;background:var(--accent)}
 .fx{font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--ink3);padding-left:92px}
 
-.kindrow{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:2px}
+/* One slim row: the four answers are known by now, so their hints are tooltips. */
+.kindrow{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
 .kindbtn{
-  border:1px solid var(--line);background:var(--surface);border-radius:7px;padding:9px 11px;cursor:pointer;
-  display:flex;flex-direction:column;gap:2px;text-align:left;
+  border:1px solid var(--line);background:var(--surface);border-radius:7px;padding:6px 10px;cursor:pointer;
+  display:flex;align-items:center;text-align:left;
 }
 .kindbtn b{font-size:13.5px;font-weight:600;display:flex;align-items:center;gap:6px}
 .kindbtn kbd{
@@ -268,19 +269,21 @@ em.chip-none{background:var(--warnsoft);color:var(--warn);font-style:normal;font
 .pickbox{display:flex;flex-direction:column;gap:7px}
 /* The box says which book it is answering for, in colour and in words:
    blue for the ATO return, green for his own sheets. */
-.pickbox.for-ato,.pickbox.for-sheet{border:2px solid var(--pf);border-radius:10px;padding:10px 11px 11px;
+.pickbox.for-ato,.pickbox.for-sheet{border:2px solid var(--pf);border-radius:10px;padding:7px 9px 9px;gap:6px;
   background:color-mix(in srgb,var(--pf) 7%,var(--surface))}
 .pickbox.for-ato{--pf:var(--ato)}
 .pickbox.for-sheet{--pf:var(--sheet)}
 .pickfor{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .pickfor .tag{background:var(--pf);color:var(--surface);font-size:10.5px;font-weight:700;letter-spacing:.08em;
   text-transform:uppercase;padding:3px 8px;border-radius:5px}
-.pickfor .step{font-size:11px;color:var(--pf);font-weight:600;letter-spacing:.03em}
+.pickfor .step{font-size:11px;color:var(--pf);font-weight:600;letter-spacing:.03em;margin-left:auto;opacity:.85}
+.pickfor .lbl{margin:0}
 .pickbox.for-ato .lbl,.pickbox.for-sheet .lbl{color:var(--pf)}
 .pickbox.for-ato input:focus,.pickbox.for-sheet input:focus{border-color:var(--pf);outline-color:var(--pf)}
 .pickbox input{font-size:13px}
+/* The list gets whatever height the screen has left, not a fixed 360px. */
 .pickmenu{
-  max-height:360px;overflow-y:auto;border:1px solid var(--linesoft);border-radius:7px;
+  max-height:max(300px,calc(100vh - 330px));overflow-y:auto;border:1px solid var(--linesoft);border-radius:7px;
   display:flex;flex-direction:column;background:var(--raise);
 }
 /* Colour carries the block a line belongs to, so a long list can be scanned
@@ -339,15 +342,20 @@ em.chip-none{background:var(--warnsoft);color:var(--warn);font-style:normal;font
 .settledrow{display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--surface2);border-radius:7px;padding:9px 12px}
 .settledrow b{font-size:13px}
 .rulebox{
-  display:flex;align-items:center;gap:9px;padding:7px 11px;border:1px dashed var(--line);
-  border-radius:7px;font-size:12px;color:var(--ink2);cursor:pointer;line-height:1.4;
-  margin-top:-2px;
+  display:flex;align-items:center;gap:8px;padding:4px 10px;border:1px dashed var(--line);
+  border-radius:7px;font-size:12px;color:var(--ink2);cursor:pointer;line-height:1.35;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
 }
+.rulebox>span{overflow:hidden;text-overflow:ellipsis}
 .rulebox kbd{
   font-family:"IBM Plex Mono",monospace;font-size:9.5px;min-width:15px;height:15px;
   display:inline-grid;place-items:center;border:1px solid var(--line);border-radius:3px;
   color:var(--ink2);background:var(--surface);vertical-align:middle;
 }
+.fychip{font-family:"IBM Plex Mono",monospace;font-size:10.5px;margin-left:6px;padding:1px 7px;border-radius:4px;
+  border:1px dashed var(--line);background:transparent;color:var(--ink2);cursor:pointer}
+.fychip:hover{border-style:solid;border-color:var(--accentline);color:var(--ink)}
+.rulebox .sib{color:var(--ink3);font-size:11px;margin-left:4px}
 .rulebox.on{border-color:var(--accentline);background:var(--accentsoft);color:var(--ink2)}
 .rulebox input{width:auto;margin-top:2px;flex:none}
 .rulebox b{color:var(--ink)}
@@ -2666,10 +2674,10 @@ function pickHits(t){
 function pickFor(t){
   if(!isTrack()) return {cls:"for-ato",tag:"ATO return",step:""};
   if(lineMode(t)) return {cls:"for-sheet",tag:"Your sheets",
-    step:t.kind==="business"?"Step 2 of 2 · the line on GIA Finance Tracking / Budget Tracker":""};
-  if(t.kind==="personal") return {cls:"for-sheet",tag:"Your sheets",step:"Budget Tracker · personal"};
-  if(t.kind==="exclude") return {cls:"for-ato",tag:"ATO return",step:"kept off the return — which kind?"};
-  return {cls:"for-ato",tag:"ATO return",step:"Step 1 of 2 · the category on the tax return"};
+    step:t.kind==="business"?"step 2 of 2":""};
+  if(t.kind==="personal") return {cls:"for-sheet",tag:"Your sheets",step:"Budget Tracker"};
+  if(t.kind==="exclude") return {cls:"for-ato",tag:"ATO return",step:"kept off it"};
+  return {cls:"for-ato",tag:"ATO return",step:"step 1 of 2"};
 }
 function pickPrompt(t){
   if(!isTrack()) return t.amt>=0?"Which kind of income?":"Which expense category?";
@@ -2749,8 +2757,8 @@ function activeCard(t){
 
   if(isTrack()){
     body+=`<div class="kindrow">${KINDS.map(k=>
-      `<button class="kindbtn${t.kind===k.k?" on":""}" data-kind="${k.k}">
-         <b>${k.label}<kbd>${k.key}</kbd></b><span>${k.hint}</span>
+      `<button class="kindbtn${t.kind===k.k?" on":""}" data-kind="${k.k}" title="${esc(k.hint)}">
+         <b>${k.label}<kbd>${k.key}</kbd></b>
        </button>`).join("")}</div>`;
     /* Directly under the four answers, not below the list. It is a decision
        about the answer you are making, and at the bottom of forty options it
@@ -2761,11 +2769,12 @@ function activeCard(t){
        now it is R, then T. Same on a transfer already answered: tick it and
        press T again. */
     if(t.mk&&(!t.kind||picking||needLine||t.kind==="transfer")){
-      const what=!t.kind?"gets whichever answer you pick next":"gets this answer";
-      body+=`<label class="rulebox${ruleOn?" on":""}">
+      /* One line. The caution about merchants that vary lives in the tooltip —
+         it was two lines of height on every single card. */
+      body+=`<label class="rulebox${ruleOn?" on":""}" title="Leave it off for a merchant that means different things on different days.">
         <input type="checkbox" id="ruleChk"${ruleOn?" checked":""}>
-        <span><b>Make a rule</b> <kbd>r</kbd> — every “${esc(t.mk)}” ${what} from now on${
-          sib?`, and ${sib} already loaded`:""}. Leave it off for a merchant that means different things on different days.</span>
+        <span><b>Make a rule</b> <kbd>r</kbd> — every “${esc(t.mk)}” gets this answer${
+          sib?` <span class="sib">+${sib} loaded</span>`:""}</span>
       </label>`;
     }
   }
@@ -2775,8 +2784,8 @@ function activeCard(t){
     if(pickSel>=hits.length) pickSel=0;
     const pf=pickFor(t);
     body+=`<div class="pickbox ${pf.cls}">
-      <div class="pickfor"><span class="tag">${pf.tag}</span>${pf.step?`<span class="step">${esc(pf.step)}</span>`:""}</div>
-      <div class="lbl">${pickPrompt(t)}</div>
+      <div class="pickfor"><span class="tag">${pf.tag}</span><span class="lbl">${pickPrompt(t)}</span>${
+        pf.step?`<span class="step">${esc(pf.step)}</span>`:""}</div>
       <input type="text" id="pickInput" value="${esc(pickQ)}" placeholder="Type to narrow…" autocomplete="off">
       <div class="pickmenu">${pickMenu(hits,pickSel)}</div>
     </div>`;
@@ -2803,11 +2812,14 @@ function activeCard(t){
      normal, and sorting does not care: it is coded once and every year's report
      reads from the same answers. It only says which year this one lands in, and
      offers to go there. */
+  let fyChip="";
   if(!inFY(t)){
     const home=fyOf(t.date);
-    note+=`<div class="fx">${home
-      ? `Counts in <b style="color:var(--ink)">${esc(home.label)}</b>, not the ${esc(activeFY().label)} report you have open. <button class="btn sm noprint" data-fy="${home.id}" style="margin-left:6px">Read ${esc(home.label)}</button>`
-      : `Dated ${niceDate(t.date)}, outside every financial year the app covers.`}</div>`;
+    /* Said on the chip line, not a row of its own — it is a fact about the
+       transaction, and the space below belongs to the answer. */
+    fyChip=home
+      ? `<button class="fychip noprint" data-fy="${home.id}" title="You are reading ${esc(activeFY().label)}. Click to open ${esc(home.label)}.">in ${esc(home.label)} ›</button>`
+      : `<span class="fychip" title="Outside every financial year the app covers">no FY</span>`;
   }
 
   return `<div class="txcard cur" data-id="${t.id}">
@@ -2816,7 +2828,7 @@ function activeCard(t){
       <span class="desc">${esc(t.desc)}</span>
       ${money(t)}
     </div>
-    <div class="line2"><span class="acct">${esc(t.acct)}</span>${chips(t)}</div>
+    <div class="line2"><span class="acct">${esc(t.acct)}</span>${chips(t)}${fyChip}</div>
     ${note}${body}
   </div>`;
 }

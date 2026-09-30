@@ -4,6 +4,30 @@ What was built, when, and what you'd need to know to change it. Newest first.
 
 ---
 
+## 30 September 2026 — A compact answer card
+
+"This whole part takes up too much space on the screen, leaving too little
+space for the selector below."
+
+Everything above the pick list was about 380px tall; it is now about 200, and
+the list uses the rest of the screen.
+
+- The four answers (Personal / Business / Transfer / Other) are one slim row;
+  their hints are tooltips.
+- Make a rule is one line — "every “X” gets this answer +N loaded" — with the
+  merchant caution moved to its tooltip.
+- The "Counts in FY …, not the … report you have open" row became a small chip
+  on the account line, "in FY 2025–26 ›", which still switches the year when
+  clicked (`.fychip`, `data-fy`).
+- The pick box header is one line: the ATO RETURN / YOUR SHEETS tag, the
+  question, and "step 1 of 2" at the right.
+- `.pickmenu` height is `max(300px, calc(100vh - 330px))` instead of a fixed
+  360px.
+
+`fy.test.mjs` now looks for the chip rather than the old note row.
+
+---
+
 ## 30 September 2026 — The 2026 CommBank print engine
 
 "I am still getting this error while trying to upload statements from Commbank"

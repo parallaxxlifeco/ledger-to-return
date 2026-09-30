@@ -67,7 +67,8 @@ console.log('\nTHE NOTE, AND THE WAY OUT:');
 const note = await p.evaluate(() => {
   /* it was just answered, so it has left the To sort list */
   filter = 'all'; curId = 'j'; renderList();
-  const el = document.querySelector('.txcard.cur .fx');
+  /* A chip on the account line since the card was made compact. */
+  const el = document.querySelector('.txcard.cur .fychip');
   return {text: el ? el.innerText.replace(/\s+/g, ' ') : null,
           button: !!document.querySelector('.txcard.cur [data-fy]')};
 });
@@ -80,11 +81,11 @@ await p.waitForTimeout(250);
 const after = await p.evaluate(() => ({
   active: activeFY().label,
   header: document.querySelector('#fyTop')?.value,
-  note: document.querySelector('.txcard.cur .fx')?.innerText || '',
+  note: document.querySelector('.txcard.cur .fychip')?.innerText || '',
 }));
 check('clicking it switches the year', after.active === 'FY 2024–25', after.active);
 check('the header control follows', after.header === 'fy2425', String(after.header));
-check('and the note goes away', !/Counts in/.test(after.note));
+check('and the note goes away', !/FY/.test(after.note));
 
 console.log(bad ? `\n${bad} CHECK(S) FAILED` : '\nyears behave');
 console.log('PAGE ERRORS:', errs.length ? errs : 'none');
