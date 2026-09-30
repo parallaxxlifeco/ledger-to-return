@@ -4,6 +4,31 @@ What was built, when, and what you'd need to know to change it. Newest first.
 
 ---
 
+## 30 September 2026 — Which book a pick list is for
+
+"I am getting a bit confused in which log I am listing for … Can you make it
+more obvious - for ATO maybe colour the box the blue ATO colour. And for my own
+personal selection it can be Green."
+
+A business row is asked twice — the ATO category, then the sheet line — and the
+only difference on screen was the wording of one line. The pick box now says
+which book it answers for:
+
+- **Blue, "ATO RETURN"** — the tax category. Business rows show "Step 1 of 2 ·
+  the category on the tax return"; Other shows "kept off the return"; the tax
+  book is always blue.
+- **Green, "YOUR SHEETS"** — a line on GIA Finance Tracking / Budget Tracker.
+  Business rows show "Step 2 of 2"; personal rows show "Budget Tracker ·
+  personal".
+
+`pickFor(t)` in `part_c4.js` decides it (it follows `lineMode`, so a Stripe sale
+that arrives needing only its line is green). Colours are tokens in
+`part_a.html`: `--ato` / `--sheet` with their dark-theme values; `.pickbox.for-ato`
+and `.for-sheet` set `--pf`, which the border, wash, tag, prompt and focus ring
+all use. Change the two tokens to change the colours.
+
+---
+
 ## 30 September 2026 — CommBank account statements
 
 "I am trying to import this for the Parallaxx apparel income but now its not a

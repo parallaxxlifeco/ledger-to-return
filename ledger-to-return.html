@@ -9,6 +9,9 @@
   --ink:#161E23; --ink2:#44525B; --ink3:#75858F;
   --accent:#14607F; --accentink:#FFFFFF; --accentsoft:#E0EEF4; --accentline:#9CC5D6;
   --income:#256F4B; --incomesoft:#E1F0E8;
+  /* Which book a pick list answers for: ATO navy for the return, green for his
+     own sheets. */
+  --ato:#1D4F9C; --atosoft:#E4ECF8; --sheet:#1F7A4D; --sheetsoft:#E2F2E9;
   --warn:#8E5C0C; --warnsoft:#F8EEDA;
   --crit:#9C3729; --critsoft:#F8E6E2;
   --shadow:0 1px 2px rgba(16,30,38,.06),0 8px 24px -12px rgba(16,30,38,.18);
@@ -26,6 +29,7 @@
     --ink:#E4EBEF; --ink2:#A4B2BB; --ink3:#76858F;
     --accent:#5CB3D4; --accentink:#0C1216; --accentsoft:#16323E; --accentline:#2F5D71;
     --income:#63C295; --incomesoft:#123026;
+    --ato:#7FA6EC; --atosoft:#17243A; --sheet:#63C295; --sheetsoft:#12301F;
     --warn:#D9A441; --warnsoft:#32270F;
     --crit:#E28471; --critsoft:#391C16;
     --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px -12px rgba(0,0,0,.7);
@@ -44,6 +48,7 @@
   --ink:#E4EBEF; --ink2:#A4B2BB; --ink3:#76858F;
   --accent:#5CB3D4; --accentink:#0C1216; --accentsoft:#16323E; --accentline:#2F5D71;
   --income:#63C295; --incomesoft:#123026;
+  --ato:#7FA6EC; --atosoft:#17243A; --sheet:#63C295; --sheetsoft:#12301F;
   --warn:#D9A441; --warnsoft:#32270F;
   --crit:#E28471; --critsoft:#391C16;
   --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px -12px rgba(0,0,0,.7);
@@ -244,6 +249,18 @@ em.chip-none{background:var(--warnsoft);color:var(--warn);font-style:normal;font
 .kindbtn.on span{color:var(--accentink);opacity:.8}
 
 .pickbox{display:flex;flex-direction:column;gap:7px}
+/* The box says which book it is answering for, in colour and in words:
+   blue for the ATO return, green for his own sheets. */
+.pickbox.for-ato,.pickbox.for-sheet{border:2px solid var(--pf);border-radius:10px;padding:10px 11px 11px;
+  background:color-mix(in srgb,var(--pf) 7%,var(--surface))}
+.pickbox.for-ato{--pf:var(--ato)}
+.pickbox.for-sheet{--pf:var(--sheet)}
+.pickfor{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.pickfor .tag{background:var(--pf);color:var(--surface);font-size:10.5px;font-weight:700;letter-spacing:.08em;
+  text-transform:uppercase;padding:3px 8px;border-radius:5px}
+.pickfor .step{font-size:11px;color:var(--pf);font-weight:600;letter-spacing:.03em}
+.pickbox.for-ato .lbl,.pickbox.for-sheet .lbl{color:var(--pf)}
+.pickbox.for-ato input:focus,.pickbox.for-sheet input:focus{border-color:var(--pf);outline-color:var(--pf)}
 .pickbox input{font-size:13px}
 .pickmenu{
   max-height:360px;overflow-y:auto;border:1px solid var(--linesoft);border-radius:7px;
@@ -2605,6 +2622,17 @@ function pickHits(t){
   const toks=q.split(/\s+/);
   return pool.filter(o=>{const h=o.hay.toLowerCase();return toks.every(x=>h.includes(x));});
 }
+/* Which book the open pick list answers for. A business row is asked twice —
+   the ATO category first, then the line on his sheets — so the box has to say
+   which of the two it is. */
+function pickFor(t){
+  if(!isTrack()) return {cls:"for-ato",tag:"ATO return",step:""};
+  if(lineMode(t)) return {cls:"for-sheet",tag:"Your sheets",
+    step:t.kind==="business"?"Step 2 of 2 · the line on GIA Finance Tracking / Budget Tracker":""};
+  if(t.kind==="personal") return {cls:"for-sheet",tag:"Your sheets",step:"Budget Tracker · personal"};
+  if(t.kind==="exclude") return {cls:"for-ato",tag:"ATO return",step:"kept off the return — which kind?"};
+  return {cls:"for-ato",tag:"ATO return",step:"Step 1 of 2 · the category on the tax return"};
+}
 function pickPrompt(t){
   if(!isTrack()) return t.amt>=0?"Which kind of income?":"Which expense category?";
   if(lineMode(t)) return dirOf(t)==="income"?"Which income line in your sheets?":"Which expense line in your sheets?";
@@ -2707,7 +2735,9 @@ function activeCard(t){
   if(picking||needLine){
     const hits=pickHits(t);
     if(pickSel>=hits.length) pickSel=0;
-    body+=`<div class="pickbox">
+    const pf=pickFor(t);
+    body+=`<div class="pickbox ${pf.cls}">
+      <div class="pickfor"><span class="tag">${pf.tag}</span>${pf.step?`<span class="step">${esc(pf.step)}</span>`:""}</div>
       <div class="lbl">${pickPrompt(t)}</div>
       <input type="text" id="pickInput" value="${esc(pickQ)}" placeholder="Type to narrow…" autocomplete="off">
       <div class="pickmenu">${pickMenu(hits,pickSel)}</div>
