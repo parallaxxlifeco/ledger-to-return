@@ -4,6 +4,27 @@ What was built, when, and what you'd need to know to change it. Newest first.
 
 ---
 
+## 30 September 2026 — Two columns while picking
+
+"What if we design two columns so that the transaction detail is on the left
+side and then I have the full page height for the scroller categories."
+
+While a pick list is open, the card is two columns (`.txcard.cur.split`): the
+transaction, its chips, the four answers (2×2) and Make a rule on the left in
+330px; the ATO / sheets pick list on the right, `max-height` of
+`calc(100vh - 235px)` — most of the screen. On a 900px-tall screen that is
+about twenty rows at once instead of eight. When there is nothing to pick (a
+transfer, a settled row) the card stays one column.
+
+Under 860px wide it stacks again, list below. The sort pane is 1180px wide now
+(was 920) to give the list room. `activeCard` builds `head` + `body` (left) and
+`right` (the pick box) separately.
+
+`rules.test.mjs`: the rule box must be beside the list (left column) or above
+it — never below.
+
+---
+
 ## 30 September 2026 — A compact answer card
 
 "This whole part takes up too much space on the screen, leaving too little

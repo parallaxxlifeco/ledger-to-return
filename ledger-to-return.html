@@ -158,7 +158,7 @@ tbody tr:last-child td{border-bottom:0}
 .neg{color:var(--ink)}
 
 /* ---------- sort workspace ---------- */
-.sortpane{max-width:920px;margin:0 auto;padding:0 20px 90px;display:flex;flex-direction:column;min-height:calc(100vh - 56px)}
+.sortpane{max-width:1180px;margin:0 auto;padding:0 20px 90px;display:flex;flex-direction:column;min-height:calc(100vh - 56px)}
 .stickyhead{
   position:sticky;top:56px;z-index:20;background:var(--bg);
   padding:14px 0 10px;border-bottom:1px solid var(--linesoft);margin-bottom:12px;
@@ -345,6 +345,25 @@ em.chip-none{background:var(--warnsoft);color:var(--warn);font-style:normal;font
 .empty{padding:60px 24px;text-align:center;color:var(--ink3);font-size:13px}
 .empty b{display:block;color:var(--ink);font-size:15px;font-weight:600;margin-bottom:6px}
 
+/* ---- the open card in two columns ----
+   Left: the transaction, the four answers, the rule. Right: the pick list,
+   as tall as the screen allows. */
+.txcard.cur.split{display:grid;grid-template-columns:minmax(0,330px) minmax(0,1fr);gap:16px;align-items:start}
+.split .curleft{display:flex;flex-direction:column;gap:8px;min-width:0}
+.split .curright{min-width:0}
+.split .line1{grid-template-columns:1fr auto;grid-template-areas:"d amt" "desc desc";row-gap:5px}
+.split .line1 .d{grid-area:d}
+.split .line1 .amt{grid-area:amt}
+.split .line1 .desc{grid-area:desc}
+.txcard.cur.split .line2,.split .fx{padding-left:0}
+.split .kindrow{grid-template-columns:1fr 1fr}
+.split .rulebox{white-space:normal;align-items:flex-start;padding:6px 10px}
+.split .rulebox input{margin-top:3px}
+.split .pickmenu{max-height:max(320px,calc(100vh - 235px))}
+@media (max-width:860px){
+  .txcard.cur.split{display:flex;flex-direction:column;align-items:stretch;gap:8px}
+  .split .pickmenu{max-height:max(300px,calc(100vh - 330px))}
+}
 @media (max-width:860px){.kindrow{grid-template-columns:repeat(2,1fr)}}
 @media (max-width:700px){
   .line1{grid-template-columns:64px minmax(0,1fr);row-gap:4px}
@@ -2762,11 +2781,12 @@ function activeCard(t){
     }
   }
 
+  let right="";
   if(picking||needLine){
     const hits=pickHits(t);
     if(pickSel>=hits.length) pickSel=0;
     const pf=pickFor(t);
-    body+=`<div class="pickbox ${pf.cls}">
+    right=`<div class="pickbox ${pf.cls}">
       <div class="pickfor"><span class="tag">${pf.tag}</span><span class="lbl">${pickPrompt(t)}</span>${
         pf.step?`<span class="step">${esc(pf.step)}</span>`:""}</div>
       <input type="text" id="pickInput" value="${esc(pickQ)}" placeholder="Type to narrow…" autocomplete="off">
@@ -2805,15 +2825,21 @@ function activeCard(t){
       : `<span class="fychip" title="Outside every financial year the app covers">no FY</span>`;
   }
 
-  return `<div class="txcard cur" data-id="${t.id}">
-    <div class="line1">
+  const head=`<div class="line1">
       <span class="d">${niceDate(t.date)}</span>
       <span class="desc">${esc(t.desc)}</span>
       ${money(t)}
     </div>
     <div class="line2"><span class="acct">${esc(t.acct)}</span>${chips(t)}${fyChip}</div>
-    ${note}${body}
+    ${note}`;
+  /* Two columns while there is a list to pick from: the transaction and its
+     answers on the left, the list down the whole right side, so it needs far
+     less scrolling. Narrow screens stack them again (see .split in the CSS). */
+  if(right) return `<div class="txcard cur split" data-id="${t.id}">
+    <div class="curleft">${head}${body}</div>
+    <div class="curright">${right}</div>
   </div>`;
+  return `<div class="txcard cur" data-id="${t.id}">${head}${body}</div>`;
 }
 function wireCards(){
   $$("#rowList .txcard").forEach(c=>c.addEventListener("mousedown",ev=>{

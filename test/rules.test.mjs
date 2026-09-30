@@ -121,11 +121,15 @@ const place = await p.evaluate(() => {
   return {
     order: [...card.children].map(c => c.className).join(' > '),
     underTheButtons: box && kinds && box.getBoundingClientRect().top > kinds.getBoundingClientRect().top,
-    aboveTheList: box && pick && box.getBoundingClientRect().top < pick.getBoundingClientRect().top,
+    /* Two columns on a wide screen: the box sits beside the list, in the left
+       column. Stacked on a narrow one: above it. Either way, never below. */
+    aboveTheList: box && pick && (
+      (!!box.closest('.curleft') && !!pick.closest('.curright')) ||
+      box.getBoundingClientRect().top < pick.getBoundingClientRect().top),
   };
 });
 check('the rule box sits under the four answers', place.underTheButtons, place.order);
-check('and above the list, not below it', place.aboveTheList);
+check('and beside or above the list, never below it', place.aboveTheList);
 check('the chip counts them', panel.chip === '1', panel.chip);
 check('the row says what it fills and how much it has touched', /Personal/.test(panel.text) && /filled in/.test(panel.text), panel.text);
 
