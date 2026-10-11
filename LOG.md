@@ -4,6 +4,56 @@ What was built, when, and what you'd need to know to change it. Newest first.
 
 ---
 
+## 11 October 2026 — Stripe in his own figures, and Change that finds the row
+
+**"These numbers don't seem to add up properly? This would mean I have made a
+13k loss in my business?"** The net was official income less expenses, and
+official income left out $37,968 of Stripe sales while the expenses that earned
+them — and Stripe's own fees — were in. Asked how to treat it, his answer:
+"Stripe sales are included as business income but kept separate so not added
+officially, but tracked for internal purposes and calculations."
+
+So, on the report:
+
+- **Business income** at the top includes Stripe ("$18,072 + $37,968 Stripe").
+- **Stripe income · kept separate** box: the Stripe total, "not in the
+  official figures".
+- **Net before tax** includes Stripe, with the official figure without it
+  underneath.
+- The **official figures stay as they were**: the Income table and its Total,
+  the schedule roll-up, and the Summary CSV totals exclude Stripe. Under Income
+  there is a separate "Stripe sales — kept separate" table (it opens like the
+  others), and the Summary CSV adds three "Kept separate" lines after the
+  totals: Stripe sales, income including Stripe, net including Stripe.
+
+My advice, given at the time: as far as I know the ATO matching Stripe's data
+doesn't remove the need to declare the income, so he should confirm with his
+accountant how the return treats it.
+
+**"When I click change … it doesn't go to the transaction … and there is no
+back button."** The queue drew only the first 250 rows of the All filter, so a
+row further down was opened but never shown — and in the two-pane layout the
+answer card no longer carries the description, so there was nothing to see.
+
+- Change now opens Sort on **just that category's transactions**
+  (`fromReport`, used by `visibleTx`), the one pressed highlighted and
+  scrolled into view.
+- **← Back to report** heads the list; answering also goes back. Both restore
+  your previous filter, search and account (`goBackToReport`). Touching a
+  filter, the search or the account box leaves the report list.
+- The 250-row window now always contains the current row, and the queue's
+  scroll-into-view measures with `getBoundingClientRect`.
+
+Also checked his live data (read-only): his NetBank Saver statement is loaded
+three times under three account names ("CommBank NetBank Saver 1986",
+"Parallaxx Income", "parallaxx income") — he chose to leave them. In FY 2025-26
+that counts $860 of freight and $303 of Amazon income twice.
+
+Tests: `stripe.test.mjs` (the boxes, the separate table, the CSV lines);
+`report.test.mjs` (the category list, the highlight, Back, a row past 250).
+
+---
+
 ## 30 September 2026 — Stripe on the report, and categories that open up
 
 **"Another box … that provides the Stripe totals too — just for display

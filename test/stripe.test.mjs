@@ -152,10 +152,18 @@ check('Stripe sales add nothing to income on the return', near(ret.income, 0) &&
 check('and are listed as kept off it', ret.listedAsOff);
 check('Stripe fees are on the return as a deduction: 38.98', near(ret.bank, -38.98), `${ret.bank}`);
 const box = await p.evaluate(() => { renderAll(); go('report');
-  const el = document.querySelector('.stat.info'); return {text: el ? el.innerText.replace(/\s+/g, ' ') : null, income: reportData().totalIncome}; });
-check('the report shows Stripe income in a box of its own, marked as outside the totals',
-  box.text && /Stripe income/i.test(box.text) && /\$200/.test(box.text) && /not in these totals/.test(box.text), box.text);
-check('and business income still leaves it out', near(box.income, 0), String(box.income));
+  const txt = sel => (document.querySelector(sel)?.innerText || '').replace(/\s+/g, ' ');
+  const stats = [...document.querySelectorAll('.stats .stat')].map(e => e.innerText.replace(/\s+/g, ' '));
+  return {stats, income: reportData().totalIncome, csv: summaryCsv(), sep: txt('#reportInner h3')}; });
+/* His call: Stripe counts in business income and net for his own figures, but
+   stays out of the official figures — category totals, roll-up, CSV totals. */
+check('business income at the top includes Stripe, and says how much', box.stats.some(x => /Business income \$200 \$0 \+ \$200 Stripe/i.test(x)), box.stats[0]);
+check('a box of its own marks it kept separate', box.stats.some(x => /Stripe income · kept separate \$200/i.test(x) && /not in the official figures/i.test(x)));
+check('net includes it, and shows the official figure without it', box.stats.some(x => /Net before tax/i.test(x) && /official, without it/i.test(x)), box.stats.find(x => /Net/i.test(x)));
+check('the official income total still leaves it out', near(box.income, 0), String(box.income));
+check('Stripe sales get their own table under Income', /Stripe sales — kept separate/.test(box.sep));
+check('the Summary CSV lists it on its own lines, outside the totals',
+  /Kept separate,Stripe sales — not in the totals above,,6,200.00/.test(box.csv) && /Income,TOTAL,,0,0.00/.test(box.csv), box.csv.split('\n').filter(l => /Kept|Income,TOTAL/.test(l)).join(' | '));
 
 /* ---------------- other shapes ---------------- */
 console.log('\nOTHER SHAPES:');

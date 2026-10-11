@@ -39,6 +39,14 @@ const sort = await p.evaluate(() => ({pane: document.querySelector('#pane-sort')
   ato: !!document.querySelector('.pickbox.for-ato')}));
 check('Change opens Sort on that transaction, with the tax categories ready', sort.pane && sort.cur === 'a3' && sort.ato, JSON.stringify(sort));
 
+const ctx = await p.evaluate(() => ({
+  rows: [...document.querySelectorAll('.queue .txcard')].map(e => e.dataset.id),
+  hl: document.querySelector('.queue .txcard.qcur')?.dataset.id,
+  back: !!document.querySelector('[data-back-report]'),
+  bar: document.querySelector('.repbar')?.innerText.replace(/\s+/g, ' ')}));
+check('Sort shows just that category, with the row highlighted', JSON.stringify(ctx.rows) === JSON.stringify(['a1', 'a2', 'a3']) && ctx.hl === 'a3', JSON.stringify(ctx));
+check('and a Back to report button naming it', ctx.back && /Software & subscriptions/.test(ctx.bar || ''), ctx.bar);
+
 await p.evaluate(() => { choose('ex_air'); choose(linesFor('business').find(l => l.label === 'Business Travel / Ads').key); });
 await p.waitForTimeout(150);
 const back = await p.evaluate(() => {
@@ -50,6 +58,23 @@ const back = await p.evaluate(() => {
 check('answering it goes straight back to the report', back.report);
 check('where it has moved category', back.soft === 2 && back.air === 1, JSON.stringify(back));
 check('and the section you had open is still open', back.stillOpen);
+
+/* Back without changing anything, from deep in a long list. */
+const deep = await p.evaluate(() => {
+  const soft = linesFor('business').find(l => l.label === 'Regular Subcriptions').key;
+  for (let i = 0; i < 400; i++) B().tx.push(normTx({id: 'z' + i, date: '2025-09-01', desc: 'Filler ' + i, amt: -1, cur: 'AUD', acct: 'card', mk: 'FILLER',
+    kind: 'business', tax: 'ex_bank', line: soft}, true));
+  B().tx.push(normTx({id: 'zz', date: '2025-08-31', desc: 'The one to fix', amt: -9, cur: 'AUD', acct: 'card', mk: 'FIX', kind: 'business', tax: 'ex_bank', line: soft}, true));
+  filter = 'todo'; renderAll(); go('report'); repOpen.add('ex_bank'); renderReport();
+  document.querySelector('[data-reassign="zz"]').click();
+  const hl = document.querySelector('.queue .txcard.qcur');
+  const q = document.querySelector('.queue');
+  const vis = hl && hl.getBoundingClientRect().top >= q.getBoundingClientRect().top && hl.getBoundingClientRect().bottom <= q.getBoundingClientRect().bottom;
+  document.querySelector('[data-back-report]').click();
+  return {found: !!hl && hl.dataset.id === 'zz', vis, report: document.querySelector('#pane-report').classList.contains('on'), filter};
+});
+check('row 401 of a category is shown, highlighted and scrolled into view', deep.found && deep.vis, JSON.stringify(deep));
+check('Back returns to the report and puts your filter back', deep.report && deep.filter === 'todo', JSON.stringify(deep));
 
 console.log(bad ? `\n${bad} CHECK(S) FAILED` : '\nthe report opens up');
 console.log('PAGE ERRORS:', errs.length ? errs : 'none');

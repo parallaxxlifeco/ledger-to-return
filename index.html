@@ -410,6 +410,9 @@ em.chip-split{background:var(--surface2);color:var(--ink2);font-style:normal;fon
 .queue .txcard.qcur .line2{padding-left:82px;min-height:0;margin-top:2px}
 .queue .txcard.qcur .fx{padding-left:82px;color:var(--ink2)}
 .queue .txcard.qcur .line1 .desc{white-space:normal}
+.repbar{display:flex;align-items:center;gap:10px;padding:4px 2px 2px;font-size:12px;color:var(--ink2)}
+.repbar span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.repbar b{font-family:"IBM Plex Mono",monospace;font-weight:500;color:var(--ink3);margin-left:4px}
 .qhead{font-size:10.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--ink3);
   display:flex;justify-content:space-between;padding:4px 2px 0}
 .qhead span{font-family:"IBM Plex Mono",monospace;letter-spacing:0}
@@ -2625,6 +2628,10 @@ const EXCLUDE_CATS=["x_partner","x_drawings","x_tax","x_gst","x_loan","x_capital
 const isTransfer=t=>isTrack()&&t.kind==="transfer";
 
 function visibleTx(){
+  /* Sent here from a report category: just that category's transactions,
+     fixed when Change was pressed — a row moved to another category stays in
+     view until you go back. */
+  if(fromReport) return B().tx.filter(t=>fromReport.ids.has(t.id));
   const q=listQ.toLowerCase();
   return B().tx.filter(t=>{
     const done=settled(t);
@@ -2844,12 +2851,17 @@ function renderList(){
   const held=B().tx.find(t=>t.id===curId);                 // mid-answer rows stay put
   const holding=held&&pickMode==="line"&&!list.some(t=>t.id===curId);
   if(!holding&&!list.some(t=>t.id===curId)){ curId=list[0].id; resetPick(); }
-  const cap=list.slice(0,250);
+  /* At most 250 drawn, but always a window that holds the current row — it
+     used to be cut off past 250, so Change from the report opened a row the
+     queue didn't show. */
+  const ci=list.findIndex(t=>t.id===curId);
+  const from=ci>=250?Math.max(0,ci-100):0;
+  const cap=list.slice(from,from+250);
   const seq=holding?[held,...cap]:cap;
   lastSplit=splitMode();
   if(lastSplit){ renderSplit(el,seq,list.length>250); renderProgress(); return; }
   el.classList.remove("splitmode");
-  el.innerHTML=seq.map(t=>t.id===curId?activeCard(t):restingCard(t)).join("")+
+  el.innerHTML=(fromReport?reportBar(seq.length):"")+seq.map(t=>t.id===curId?activeCard(t):restingCard(t)).join("")+
     (list.length>250?`<div class="empty" style="padding:20px">Showing the first 250 of ${list.length}. Clear these and the rest come up.</div>`:"");
   wireCards();
   const cur=el.querySelector(".txcard.cur");
@@ -3089,7 +3101,7 @@ function renderSplit(el,seq,more){
      highlighted row in the queue, where it reads in line with the rest. */
   el.innerHTML=`<div class="sortleft">
       <div class="txcard cur answers" data-id="${t.id}"><div class="anshead">Answer the highlighted row</div>${body}</div>
-      <div class="qhead">${filter==="todo"?"Still to sort":"In this view"} <span>${seq.length}${more?"+":""}</span></div>
+      ${fromReport?reportBar(seq.length):`<div class="qhead">${filter==="todo"?"Still to sort":"In this view"} <span>${seq.length}${more?"+":""}</span></div>`}
       <div class="queue">${seq.map(x=>queueRow(x,x.id===t.id?meta:null)).join("")}${more?`<div class="empty" style="padding:14px">Showing the first 250. Clear these and the rest come up.</div>`:""}</div>
     </div>
     <div class="sortright">${right||rightPlaceholder(t)}</div>`;
@@ -3098,16 +3110,21 @@ function renderSplit(el,seq,more){
   nq.scrollTop=keep;
   const qc=nq.querySelector(".qcur");
   if(qc){
-    const a=qc.offsetTop-nq.offsetTop, b=a+qc.offsetHeight;
+    const a=qc.getBoundingClientRect().top-nq.getBoundingClientRect().top+nq.scrollTop, b=a+qc.offsetHeight;
     if(a<nq.scrollTop) nq.scrollTop=a-4;
     else if(b>nq.scrollTop+nq.clientHeight) nq.scrollTop=b-nq.clientHeight+4;
   }
+}
+function reportBar(n){
+  return `<div class="repbar"><button class="btn sm" data-back-report="1">← Back to report</button>
+    <span>${esc(fromReport.label)} <b>${n}</b></span></div>`;
 }
 let lastSplit=null;
 window.addEventListener("resize",()=>{
   const m=splitMode(); if(m!==lastSplit&&$("#rowList")) renderList();
 });
 function wireCards(){
+  $$("#rowList [data-back-report]").forEach(b=>b.addEventListener("click",e=>{ e.stopPropagation(); goBackToReport(); }));
   $$("#rowList .txcard").forEach(c=>c.addEventListener("mousedown",ev=>{
     if(ev.target.closest("button,input,label")) return;
     if(c.dataset.id!==curId){ curId=c.dataset.id; resetPick(); renderList(); }
@@ -3265,24 +3282,40 @@ function applyRule(t,rule){
 /* Opened from the report to correct one transaction: once it is answered, go
    straight back to the report rather than on to the next row. */
 let backToReport=null, backScroll=0;
-function reassign(id){
+/* From a report category to Sort and back. Sort shows only that category's
+   transactions, with the one you pressed Change on open and highlighted, and a
+   Back to report button; answering it also goes back. Your filters are put
+   back as they were. */
+let fromReport=null;
+function reassign(id,catKey){
   const t=B().tx.find(x=>x.id===id); if(!t) return;
-  backToReport=id; backScroll=window.scrollY;
-  filter="all"; listQ=""; acctQ="";
-  if($("#listSearch")) $("#listSearch").value="";
-  if($("#acctFilter")) $("#acctFilter").value="";
-  $$("#filterChips .chip").forEach(c=>c.setAttribute("aria-pressed",String(c.dataset.f==="all")));
+  const b=catKey&&reportData().byCat[catKey];
+  fromReport={label:b?b.cat.label:"From the report",
+    ids:new Set(b?b.rows.map(r=>r.id):[id]),
+    scroll:window.scrollY, filter, listQ, acctQ};
+  backToReport=id;
   curId=id; resetPick();
   pickMode=(isTrack()&&!t.kind)||t.kind==="transfer"?null:"recode";
   go("sort"); renderList();
-  toast("Pick the right answer — you'll go back to the report");
 }
+function goBackToReport(msg){
+  const ctx=fromReport; fromReport=null; backToReport=null;
+  if(ctx){
+    filter=ctx.filter; listQ=ctx.listQ; acctQ=ctx.acctQ;
+    if($("#listSearch")) $("#listSearch").value=listQ;
+    if($("#acctFilter")) $("#acctFilter").value=acctQ;
+    $$("#filterChips .chip").forEach(c=>c.setAttribute("aria-pressed",String(c.dataset.f===filter)));
+  }
+  curId=null; resetPick(); renderList();
+  go("report"); window.scrollTo(0,ctx?ctx.scroll:0);
+  if(msg) toast(msg);
+}
+const leaveReportCtx=()=>{ if(fromReport){ fromReport=null; backToReport=null; } };
 function advance(nextId){
   if(backToReport){
     const was=backToReport; backToReport=null;
     if(was===curId){                       // only for the row the report sent here
-      resetPick(); go("report"); window.scrollTo(0,backScroll);
-      toast("Changed");
+      goBackToReport("Changed");
       return;
     }
   }
@@ -3597,7 +3630,7 @@ function catDetail(b){
       <td class="mono" style="font-size:11px;color:var(--ink3)">${esc(t.acct)}</td>
       ${isTrack()?`<td style="font-size:11.5px;color:var(--ink2)">${t.line&&TRK[t.line]?esc(lineLabel(t.line)):t.noSheet?"return only":"—"}</td>`:""}
       <td class="r mono">${t.aud==null?"—":fmtAUD(Math.abs(t.aud))}${t.aud!=null&&((b.cat.kind==="income")!==(t.aud>=0))?` <span title="Money the other way — it reduces this total" style="color:var(--warn)">↩</span>`:""}</td>
-      <td class="r noprint"><button class="btn sm" data-reassign="${esc(t.id)}">Change</button></td></tr>`).join("");
+      <td class="r noprint"><button class="btn sm" data-reassign="${esc(t.id)}" data-cat="${b.cat.key}">Change</button></td></tr>`).join("");
   return `<tr class="catdetail"><td colspan="5">
     <div class="tablewrap" style="margin:4px 0 8px"><table class="inner">
       <thead><tr><th>Date</th><th>Description</th><th>Account</th>${isTrack()?"<th>Sheet line</th>":""}<th class="r">AUD</th><th class="noprint"></th></tr></thead>
@@ -3780,18 +3813,28 @@ function renderTaxReport(){
     </div>
 
     <div class="stats">
-      <div class="stat income"><span class="lbl">Business income</span><div class="v">${fmtAUD0(d.totalIncome)}</div><div class="sub">${d.income.reduce((s,b)=>s+b.n,0)} items</div></div>
       ${(()=>{
-        /* Stripe sales, shown for the whole picture but in no total: the ATO
-           already has them from Stripe, so adding them here would count them
-           twice on the return. */
-        const r=d.byCat.x_income_reported; if(!r||!r.n) return "";
-        return `<div class="stat info" title="Shown for the full picture only. Stripe reports these sales to the ATO itself, so they are not in business income, net, or any total on this report.">
-          <span class="lbl">Stripe income · ATO has it</span><div class="v">${fmtAUD0(r.aud)}</div>
-          <div class="sub">${r.n} items · not in these totals<br>with business income: ${fmtAUD0(d.totalIncome+r.aud)}</div></div>`;
-      })()}
+        /* Stripe sales: business income for his own figures — the income box
+           and the net include them — but kept separate from the official
+           figures (the category tables, the schedule roll-up, the Summary CSV
+           totals), which is how he wants the return prepared. */
+        const r=d.byCat.x_income_reported, st=r&&r.n?r.aud:0;
+        const all=d.totalIncome+st, netAll=net+st;
+        const nInc=d.income.reduce((s,b)=>s+b.n,0);
+        if(!st) return `
+      <div class="stat income"><span class="lbl">Business income</span><div class="v">${fmtAUD0(d.totalIncome)}</div><div class="sub">${nInc} items</div></div>
       <div class="stat"><span class="lbl">Business expenses</span><div class="v">${fmtAUD0(d.totalExpense)}</div><div class="sub">${d.expense.reduce((s,b)=>s+b.n,0)} items</div></div>
-      <div class="stat"><span class="lbl">Net before tax</span><div class="v" style="color:${net<0?"var(--crit)":"var(--ink)"}">${fmtAUD0(net)}</div><div class="sub">income less expenses</div></div>
+      <div class="stat"><span class="lbl">Net before tax</span><div class="v" style="color:${net<0?"var(--crit)":"var(--ink)"}">${fmtAUD0(net)}</div><div class="sub">income less expenses</div></div>`;
+        return `
+      <div class="stat income" title="Everything the business took in, Stripe included"><span class="lbl">Business income</span><div class="v">${fmtAUD0(all)}</div>
+        <div class="sub">${fmtAUD0(d.totalIncome)} + ${fmtAUD0(st)} Stripe</div></div>
+      <div class="stat info" title="Counted in business income and net here, for your own figures. Kept out of the official figures below — the category totals, the schedule roll-up and the Summary CSV totals.">
+        <span class="lbl">Stripe income · kept separate</span><div class="v">${fmtAUD0(st)}</div>
+        <div class="sub">${r.n} items · not in the official figures</div></div>
+      <div class="stat"><span class="lbl">Business expenses</span><div class="v">${fmtAUD0(d.totalExpense)}</div><div class="sub">${d.expense.reduce((s,b)=>s+b.n,0)} items</div></div>
+      <div class="stat"><span class="lbl">Net before tax</span><div class="v" style="color:${netAll<0?"var(--crit)":"var(--ink)"}">${fmtAUD0(netAll)}</div>
+        <div class="sub">with Stripe · official, without it: ${fmtAUD0(net)}</div></div>`;
+      })()}
       <div class="stat"><span class="lbl">Left out</span><div class="v" style="color:var(--ink3)">${d.excluded.reduce((s,b)=>s+b.n,0)}</div><div class="sub">personal, transfers, drawings</div></div>
     </div>
 
@@ -3801,6 +3844,10 @@ function renderTaxReport(){
 
     <div class="sechead"><h2>Income</h2><div class="rule"></div></div>
     ${catTable(d.income,"+")}
+    ${d.byCat.x_income_reported&&d.byCat.x_income_reported.n?`
+    <h3 style="margin:18px 0 6px;font-size:13px">Stripe sales — kept separate</h3>
+    <p class="hint" style="margin:0 0 8px;max-width:78ch">Counted in business income and net at the top of this report, for your own figures. Not in the Total above, the schedule roll-up, or the totals in the Summary CSV, which lists them on a line of their own.</p>
+    ${catTable([d.byCat.x_income_reported],"+")}`:""}
     ${d.refunds?`<p class="hint" style="margin-top:8px">Plus ${d.refunds.n} refund${d.refunds.n===1?"":"s"} totalling ${fmtAUD(Math.abs(d.refunds.aud))}, which reduce expenses rather than adding to income.</p>`:""}
 
     <div class="sechead"><h2>Expenses</h2><div class="rule"></div></div>
@@ -3835,7 +3882,7 @@ function renderTaxReport(){
     const k=r.dataset.cat; repOpen.has(k)?repOpen.delete(k):repOpen.add(k);
     const y=window.scrollY; renderReport(); window.scrollTo(0,y);
   }));
-  $$("#reportInner [data-reassign]").forEach(bt=>bt.addEventListener("click",e=>{ e.stopPropagation(); reassign(bt.dataset.reassign); }));
+  $$("#reportInner [data-reassign]").forEach(bt=>bt.addEventListener("click",e=>{ e.stopPropagation(); reassign(bt.dataset.reassign,bt.dataset.cat); }));
   $("#bizName").addEventListener("input",e=>{B().biz.name=e.target.value;markDirty();});
   $("#bizAbn").addEventListener("input",e=>{B().biz.abn=e.target.value;markDirty();});
   $("#btnPrint").addEventListener("click",()=>window.print());
@@ -3880,6 +3927,14 @@ function summaryCsv(){
   L.push(["Expense","TOTAL","",d.expense.reduce((s,b)=>s+b.n,0),d.totalExpense.toFixed(2)].map(csvq).join(","));
   L.push([]);
   L.push(["Net before tax","","","",(d.totalIncome-d.totalExpense).toFixed(2)].map(csvq).join(","));
+  /* Stripe sales on lines of their own, outside the totals above. */
+  const sr=d.byCat.x_income_reported;
+  if(sr&&sr.n){
+    L.push([]);
+    L.push(["Kept separate","Stripe sales — not in the totals above","",sr.n,sr.aud.toFixed(2)].map(csvq).join(","));
+    L.push(["Kept separate","Business income including Stripe","","",(d.totalIncome+sr.aud).toFixed(2)].map(csvq).join(","));
+    L.push(["Kept separate","Net before tax including Stripe","","",(d.totalIncome-d.totalExpense+sr.aud).toFixed(2)].map(csvq).join(","));
+  }
   L.push([]);
   L.push(["ATO schedule roll-up","Type","","Items","AUD"].map(csvq).join(","));
   for(const a of Object.values(d.ato)) L.push([a.label,a.kind,"",a.n,Math.abs(a.aud).toFixed(2)].map(csvq).join(","));
@@ -4153,6 +4208,7 @@ $("#btnResetLines").addEventListener("click",()=>{
 
 $("#filterChips").addEventListener("click",e=>{
   const b=e.target.closest(".chip"); if(!b) return;
+  leaveReportCtx();
   filter=b.dataset.f;
   $$("#filterChips .chip").forEach(c=>c.setAttribute("aria-pressed",String(c===b)));
   curId=null; resetPick(); renderList();
@@ -4163,8 +4219,8 @@ $("#btnRules").addEventListener("click",()=>{
   renderRules();
   if(c.style.display!=="none") c.scrollIntoView({behavior:"smooth",block:"nearest"});
 });
-$("#listSearch").addEventListener("input",e=>{listQ=e.target.value;curId=null;resetPick();renderList();});
-$("#acctFilter").addEventListener("change",e=>{acctQ=e.target.value;curId=null;resetPick();renderList();});
+$("#listSearch").addEventListener("input",e=>{leaveReportCtx();listQ=e.target.value;curId=null;resetPick();renderList();});
+$("#acctFilter").addEventListener("change",e=>{leaveReportCtx();acctQ=e.target.value;curId=null;resetPick();renderList();});
 
 document.addEventListener("keydown",e=>{
   if(!$("#pane-sort").classList.contains("on")){
