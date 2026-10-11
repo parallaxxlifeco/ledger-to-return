@@ -2230,7 +2230,7 @@ function renderPreview(){
   }).join("");
   $("#prevTable").innerHTML=head+"<tbody>"+(rows||`<tr><td colspan="6" style="color:var(--crit)">No rows could be read. Check the Date and Amount columns above.</td></tr>`)+"</tbody>";
   const existing=knownIds(B());
-  const dupes=out.filter(t=>existing.has(txId(t))).length;
+  const dupes=out.filter(t=>isKnown(existing,t)).length;
   $("#dupNote").innerHTML=`${out.length} ready${bad.length?` · <span style="color:var(--warn)">${bad.length} skipped (no usable date or amount)</span>`:""}${dupes?` · <span style="color:var(--warn)">${dupes} already loaded, will be skipped</span>`:""} · dates read as ${fmt==="mdy"?"month/day/year":fmt==="ymd"?"year/month/day":"day/month/year"}`;
   $("#btnAdd").disabled=out.length===0||!!PARSED.block;
 }
@@ -2240,9 +2240,19 @@ function renderPreview(){
    so importing the same statement again doesn't bring the whole amount back. */
 function knownIds(bk){
   const s=new Set();
-  for(const t of bk.tx){ s.add(t.id); if(t.split&&t.split.of) s.add(t.split.of); }
+  for(const t of bk.tx){
+    s.add(t.id); if(t.split&&t.split.of) s.add(t.split.of);
+    /* And what it is — date, amount, description — whatever account it was
+       filed under. His Saver statement went in three times under three names,
+       and the id (which includes the account name) never matched. Stripe rows
+       carry their own reference and are left to it: two identical $50 tickets
+       the same day are two sales. */
+    if(!t.ref) s.add(contentKey(t.split?{...t,amt:t.split.amt}:t));
+  }
   return s;
 }
+const contentKey=t=>"c|"+t.date+"|"+Math.round(t.amt*100)+"|"+String(t.desc||"").slice(0,40).toLowerCase();
+const isKnown=(known,t)=>known.has(txId(t))||(!t.ref&&known.has(contentKey(t)));
 function txId(t){
   if(t.ref) return hashId("ref|"+t.ref);
   return hashId([t.date,t.cur,t.amt,t.acct,t.desc.slice(0,40)].join("|"));
@@ -2285,7 +2295,7 @@ function addParsed(){
   let added=0,auto=0,fromStripe=0,seeded=0,stripeSales=0;
   for(const t of out){
     const id=txId(t);
-    if(existing.has(id)) continue;
+    if(isKnown(existing,t)) continue;
     existing.add(id);
     const mk=t.mk||merchantKey(t.desc);
     const rule=bk.rules[mk];
@@ -3422,9 +3432,19 @@ function renderAccounts(){
     const dates=r.map(x=>x.date).sort();
     return `<tr><td>${esc(a)}</td><td class="mono">${curs}</td><td class="mono r">${r.length}</td>
       <td class="mono">${niceDate(dates[0])} – ${niceDate(dates[dates.length-1])}</td>
-      <td class="r"><button class="btn sm danger" data-del="${esc(a)}">Remove</button></td></tr>`;
+      <td class="r" style="white-space:nowrap"><button class="btn sm" data-ren="${esc(a)}">Rename</button>
+        <button class="btn sm danger" data-del="${esc(a)}">Remove</button></td></tr>`;
   }).join("");
   box.innerHTML=`<div class="tablewrap"><table><thead><tr><th>Account</th><th>Currencies</th><th class="r">Rows</th><th>Covering</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  /* Rename an account — or fold it into another by giving it that one's name. */
+  box.querySelectorAll("[data-ren]").forEach(b=>b.addEventListener("click",()=>{
+    const a=b.dataset.ren;
+    const to=(prompt(`Rename “${a}” to:`,a)||"").trim();
+    if(!to||to===a) return;
+    let n=0; for(const t of B().tx) if(t.acct===a){ t.acct=to; n++; }
+    if(acctQ===a) acctQ=to;
+    markDirty(); renderAll(); toast(`${n} rows now under “${to}”`);
+  }));
   box.querySelectorAll("[data-del]").forEach(b=>b.addEventListener("click",()=>{
     const a=b.dataset.del;
     if(!confirm(`Remove every transaction from “${a}” in this book? Your rules stay.`)) return;

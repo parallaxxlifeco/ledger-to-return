@@ -4,6 +4,38 @@ What was built, when, and what you'd need to know to change it. Newest first.
 
 ---
 
+## 11 October 2026 — The same statement under another name
+
+"Can you remove the duplicate statements and the transactions that might be
+still affected." His NetBank Saver statement (1 Feb – 31 Jul 2025, 21 rows) is
+loaded three times: "CommBank NetBank Saver 1986", "Parallaxx Income" and
+"parallaxx income". Nothing stopped the second and third: a row's id includes
+the account name, so a different name made every row new.
+
+His data is only changeable where Drive is connected — the browser reachable
+from here had a 30 September local copy and "Drive not connected", and the
+Drive copy replaces a local one on connect — so the removal is his to click.
+What the build adds:
+
+- **Duplicates across account names are caught.** `knownIds` also holds each
+  row's content — date, amount, first 40 characters of the description — and
+  `isKnown` skips an incoming row that matches, whatever account it is filed
+  under. Stripe rows carry their own reference and are left to it (two
+  identical tickets the same day are two sales). Split parts count as their
+  original.
+- **Rename** beside Remove in Import → What's loaded: renames every row of an
+  account, or folds it into another by giving it that one's name.
+
+The three copies' answers differ in five places. "parallaxx income" is the one
+to keep: interest as personal money in, the $140 as Shopify, the $5,252
+"Coaching" to xx1994 as a transfer. ("CommBank NetBank Saver 1986" has that
+$5,252 as Personal · Education and the $140 as Amazon AU; "Parallaxx Income"
+has the interest as a transfer.)
+
+`test/accounts.test.mjs`.
+
+---
+
 ## 11 October 2026 — Stripe in his own figures, and Change that finds the row
 
 **"These numbers don't seem to add up properly? This would mean I have made a
