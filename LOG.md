@@ -4,6 +4,34 @@ What was built, when, and what you'd need to know to change it. Newest first.
 
 ---
 
+## 19 October 2026 — Undo, "who is this?", and only the suggested row red
+
+**"Sometimes I hit the wrong button … can you add an undo button to reverse the
+last move I made?"** Before each answer the book is snapshotted (`checkpoint`):
+rows, rules, the rules he removed, and the learned category→line map. A business
+answer's presses (kind, category, line) share one snapshot, so **↶ Undo** takes
+back the whole answer, including any rows a rule filled alongside it, and opens
+that row again. ⌘Z / Ctrl+Z does the same (unless there's text in the search
+box). Split, Join back, Backspace-clear and removing a rule can be undone too.
+The last 15, for the session; nothing is saved between visits. The button sits
+in the answer card's header, and on the "Everything here is sorted" screen, so
+the last answer of a list can be taken back as well.
+
+**"Can you put a ? symbol button … a quick online search for what the business
+name is registered to."** A round **?** beside the account on the highlighted
+row opens a Google search for the merchant in a new tab. `whoQuery` takes off
+payment-processor prefixes ("Paypal *", "Sq *"…) and anything with four or more
+digits (references, card numbers, xx-account numbers), and keeps the town,
+which is often what tells two same-named businesses apart. Only the merchant
+text is sent, and only when he clicks.
+
+**"Only the line with the 1 should be red, not the heading."** The SUGGESTED
+heading is back to the neutral grey; the suggested option alone uses `--sug`.
+
+`test/undo.test.mjs`.
+
+---
+
 ## 19 October 2026 — The suggested line in red
 
 "Can we make that suggested line red — this grey blends in too much and I

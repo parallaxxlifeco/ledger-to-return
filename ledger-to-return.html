@@ -389,6 +389,13 @@ em.chip-none{background:var(--warnsoft);color:var(--warn);font-style:normal;font
 .splitcustom input{width:58px;padding:3px 6px;font-size:12px}
 em.chip-split{background:var(--surface2);color:var(--ink2);font-style:normal;font-size:10.5px;font-weight:600;
   padding:1px 7px;border-radius:3px;border:1px dashed var(--line)}
+.anshead{display:flex;align-items:center;justify-content:space-between;gap:8px}
+a.whois{display:inline-grid;place-items:center;width:19px;height:19px;border-radius:50%;margin-left:6px;
+  border:1px solid var(--accentline);background:var(--surface);color:var(--accent);font-size:11.5px;font-weight:700;
+  text-decoration:none;flex:none}
+a.whois:hover{background:var(--accent);color:var(--accentink);border-color:var(--accent)}
+.undorow{display:flex;justify-content:flex-end}
+.btn.undo{font-weight:600}
 .anshead{font-size:10.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--accent)}
 .queue .txcard.qcur .line2{padding-left:82px;min-height:0;margin-top:2px}
 .queue .txcard.qcur .fx{padding-left:82px;color:var(--ink2)}
@@ -1232,7 +1239,7 @@ function rebuildGroupSlots(){
 const slotOf=g=>GROUP_SLOT[g]||0;
 /* The suggested line is red, not a block colour: grey blended into the list
    and was easy to miss. */
-const gvar=g=>g==="SUGGESTED"?"--g:var(--sug)":"--g:var(--cat"+slotOf(g)+")";
+const gvar=g=>"--g:var(--cat"+slotOf(g)+")";
 const lineLabel=k=>{const t=TRK[k];return t?t.label:"";};
 const lineWhere=k=>{const t=TRK[k];return t?SHEET_NAME[t.sheet]+" · "+t.group:"";};
 indexTracks();
@@ -2754,7 +2761,9 @@ function pickMenu(hits,sel){
       const n=shown.filter(x=>x.g===o.g).length;
       html+=`<div class="pickgrp"><div class="pickhead" style="${gvar(o.g)}">${esc(o.g)}<span class="n">${n}</span></div>`;
     }
-    html+=`<button class="pickopt${i===sel?" sel":""}" data-pick="${esc(o.key)}" style="${gvar(o.g||"")}">
+    /* The suggested line itself is red, so it can't be missed; its heading
+       stays the neutral grey. */
+    html+=`<button class="pickopt${i===sel?" sel":""}" data-pick="${esc(o.key)}" style="${o.g==="SUGGESTED"?"--g:var(--sug)":gvar(o.g||"")}">
       ${i<9?`<kbd>${i+1}</kbd>`:`<kbd class="ghost">·</kbd>`}
       <span class="nm">${esc(o.label)}</span>
       ${o.note?`<span class="note">${esc(o.note)}</span>`:""}
@@ -2840,7 +2849,7 @@ function renderList(){
   }
   if(!list.length){
     el.innerHTML=`<div class="empty"><b>${filter==="todo"?"Everything here is sorted":"Nothing matches"}</b>${
-      filter==="todo"?"Open the Report tab when you're ready.":"Try a different filter."}</div>`;
+      filter==="todo"?"Open the Report tab when you're ready.":"Try a different filter."}${UNDO.length?`<div style="margin-top:12px">${undoBtn()}</div>`:""}</div>`;
     renderProgress(); return;
   }
   const held=B().tx.find(t=>t.id===curId);                 // mid-answer rows stay put
@@ -2894,6 +2903,23 @@ function restingCard(t){
     <div class="line2">${chips(t)||`<em class="chip-none">Not sorted</em>`}</div>
   </div>`;
 }
+/* "Who is this?" — a web search for the merchant, in a new tab, for the
+   charges you can't place. Card descriptors carry payment-processor prefixes
+   ("Paypal *", "Sq *") and reference numbers that only get in the way of a
+   search, so those come off; the town stays, because it is often what tells
+   two businesses of the same name apart. */
+function whoQuery(t){
+  return String(t.desc||"")
+    .replace(/^(paypal|sq|sp|sumup|zettle|pp|google|apple\.com\/bill|www)\s*\*\s*/i,"")
+    .replace(/\*/g," ")
+    .split(/\s+/).filter(w=>w&&!(/\d{4,}/.test(w))&&!/^x{2}\d+$/i.test(w)).join(" ")
+    .replace(/\s+/g," ").trim();
+}
+function whoBtn(t){
+  const q=whoQuery(t); if(!q) return "";
+  return `<a class="whois noprint" href="https://www.google.com/search?q=${encodeURIComponent(q)}" target="_blank" rel="noopener noreferrer"
+    title="Search the web for “${esc(q)}” — who this is and where">?</a>`;
+}
 function activeCard(t){
   const {head,body,right}=activeParts(t);
   /* Two columns while there is a list to pick from: the transaction and its
@@ -2903,7 +2929,7 @@ function activeCard(t){
     <div class="curleft">${head}${body}</div>
     <div class="curright">${right}</div>
   </div>`;
-  return `<div class="txcard cur" data-id="${t.id}">${head}${body}</div>`;
+  return `<div class="txcard cur" data-id="${t.id}">${UNDO.length?`<div class="undorow">${undoBtn()}</div>`:""}${head}${body}</div>`;
 }
 function activeParts(t){
   const e=enrich(t);
@@ -2988,11 +3014,11 @@ function activeParts(t){
       <span class="desc">${esc(t.desc)}</span>
       ${money(t)}
     </div>
-    <div class="line2"><span class="acct">${esc(t.acct)}</span>${chips(t)}${fyChip}</div>
+    <div class="line2"><span class="acct">${esc(t.acct)}</span>${chips(t)}${fyChip}${whoBtn(t)}</div>
     ${note}`;
   /* What the queue's highlighted row carries in the two-pane layout, where the
      card itself is only the answers. */
-  const meta=`<div class="line2"><span class="acct">${esc(t.acct)}</span>${chips(t)}${fyChip}</div>${note}`;
+  const meta=`<div class="line2"><span class="acct">${esc(t.acct)}</span>${chips(t)}${fyChip}${whoBtn(t)}</div>${note}`;
   return {head,body,right,meta};
 }
 /* ---- splitting a transaction ----
@@ -3028,6 +3054,7 @@ function splitBlock(t){
 function splitTx(id,pct){
   const bk=B(), i=bk.tx.findIndex(x=>x.id===id); if(i<0) return;
   const t=bk.tx[i];
+  checkpoint(id,"split "+t.desc.slice(0,32)); closeCheckpoint();
   pct=Math.round(+pct); if(!(pct>=1&&pct<=99)){ toast("Pick a percentage between 1 and 99"); return; }
   const amts=splitAmounts(t.amt,pct,t.cur);
   const parts=amts.map((amt,k)=>{
@@ -3044,6 +3071,7 @@ function splitTx(id,pct){
 }
 function joinSplit(of){
   const bk=B();
+  checkpoint(curId,"join back"); closeCheckpoint();
   const parts=bk.tx.filter(x=>x.split&&x.split.of===of);
   if(!parts.length) return;
   const first=parts[0];
@@ -3095,7 +3123,7 @@ function renderSplit(el,seq,more){
   /* The card is only the answers here: the transaction itself is the
      highlighted row in the queue, where it reads in line with the rest. */
   el.innerHTML=`<div class="sortleft">
-      <div class="txcard cur answers" data-id="${t.id}"><div class="anshead">Answer the highlighted row</div>${body}</div>
+      <div class="txcard cur answers" data-id="${t.id}"><div class="anshead"><span>Answer the highlighted row</span>${undoBtn()}</div>${body}</div>
       ${fromReport?reportBar(seq.length):`<div class="qhead">${filter==="todo"?"Still to sort":"In this view"} <span>${seq.length}${more?"+":""}</span></div>`}
       <div class="queue">${seq.map(x=>queueRow(x,x.id===t.id?meta:null)).join("")}${more?`<div class="empty" style="padding:14px">Showing the first 250. Clear these and the rest come up.</div>`:""}</div>
     </div>
@@ -3121,7 +3149,7 @@ window.addEventListener("resize",()=>{
 function wireCards(){
   $$("#rowList [data-back-report]").forEach(b=>b.addEventListener("click",e=>{ e.stopPropagation(); goBackToReport(); }));
   $$("#rowList .txcard").forEach(c=>c.addEventListener("mousedown",ev=>{
-    if(ev.target.closest("button,input,label")) return;
+    if(ev.target.closest("button,input,label,a")) return;
     if(c.dataset.id!==curId){ curId=c.dataset.id; resetPick(); renderList(); }
   }));
   $$("#rowList .kindbtn").forEach(b=>b.addEventListener("click",()=>setKind(b.dataset.kind)));
@@ -3165,11 +3193,46 @@ function focusPick(){
 /* A rule is opt-in, every time. It used to default on, which is how one
    Gojek answer — food, that day — quietly became every Gojek ride after it.
    Nothing is carried forward unless it is asked for. */
-function resetPick(){ pickQ=""; pickSel=0; pickMode=null; ruleOn=false; lineScope=null; splitOpen=null; }
+function resetPick(){ pickQ=""; pickSel=0; pickMode=null; ruleOn=false; lineScope=null; splitOpen=null; closeCheckpoint(); }
+/* ---- undo ----
+   Before each answer the book is snapshotted — rows, rules, the learned
+   category→line map — so a wrong press can be taken back in one step. A
+   business row is answered in two or three presses (kind, category, line); they
+   share one snapshot, so Undo takes back the whole answer, including anything a
+   rule filled in alongside it. The last 15 answers, for this session. */
+const UNDO=[];
+function checkpoint(rowId,label){
+  const last=UNDO[UNDO.length-1];
+  if(last&&last.open&&last.rowId===rowId&&last.book===S.book) return;   // same answer, still going
+  const bk=B();
+  UNDO.push({book:S.book,rowId,label,open:true,
+    tx:JSON.stringify(bk.tx),rules:JSON.stringify(bk.rules||{}),ruleOff:JSON.stringify(bk.ruleOff||{}),
+    lineFor:JSON.stringify(S.lineFor||{})});
+  if(UNDO.length>15) UNDO.shift();
+}
+function closeCheckpoint(){ const l=UNDO[UNDO.length-1]; if(l) l.open=false; }
+function undoLast(){
+  const u=UNDO.pop();
+  if(!u){ toast("Nothing to undo"); return; }
+  const bk=S.books[u.book];
+  bk.tx=JSON.parse(u.tx); bk.rules=JSON.parse(u.rules); bk.ruleOff=JSON.parse(u.ruleOff); S.lineFor=JSON.parse(u.lineFor);
+  if(u.book!==S.book){ S.book=u.book; }
+  fromReport=null; backToReport=null;
+  pickQ=""; pickSel=0; pickMode=null; ruleOn=false; lineScope=null; splitOpen=null;
+  curId=u.rowId&&bk.tx.some(t=>t.id===u.rowId)?u.rowId:null;
+  if(curId&&filter!=="all"&&!visibleTx().some(t=>t.id===curId)){
+    filter="all"; $$("#filterChips .chip").forEach(c=>c.setAttribute("aria-pressed",String(c.dataset.f==="all")));
+  }
+  markDirty(); renderAll(); if(!$("#pane-sort").classList.contains("on")) go("sort");
+  toast(`Undone: ${u.label}`);
+}
+const undoBtn=()=>UNDO.length
+  ?`<button class="btn sm undo" data-undo="1" title="Take back your last answer — ${esc(UNDO[UNDO.length-1].label)} (⌘Z)">↶ Undo</button>`:"";
 
 /* ---------- the three answers ---------- */
 function setKind(kind){
   const t=currentTx(); if(!t) return;
+  checkpoint(t.id,t.desc.slice(0,40));
   const list=visibleTx(), i=list.findIndex(x=>x.id===t.id);
   const nextId=(list.slice(i+1).find(x=>filter!=="todo"||!settled(x))||{}).id||null;
   t.line=null; t.auto=false;
@@ -3185,6 +3248,7 @@ function setKind(kind){
 }
 function choose(key){
   const t=currentTx(); if(!t) return;
+  checkpoint(t.id,t.desc.slice(0,40));
   const list=visibleTx(), i=list.findIndex(x=>x.id===t.id);
   const nextId=(list.slice(i+1).find(x=>filter!=="todo"||!settled(x))||{}).id||null;
 
@@ -3307,6 +3371,7 @@ function goBackToReport(msg){
 }
 const leaveReportCtx=()=>{ if(fromReport){ fromReport=null; backToReport=null; } };
 function advance(nextId){
+  closeCheckpoint();
   if(backToReport){
     const was=backToReport; backToReport=null;
     if(was===curId){                       // only for the row the report sent here
@@ -3321,6 +3386,7 @@ function advance(nextId){
    rules panel, where you can see what a rule has actually done first. */
 function unassign(){
   const t=currentTx(); if(!t) return;
+  checkpoint(t.id,"cleared "+t.desc.slice(0,32));
   if(isTrack()){ t.kind=null; t.line=null; t.tax=null; }
   else t.cat=null;
   t.auto=false; resetPick(); markDirty(); renderList();
@@ -3375,6 +3441,7 @@ function renderRules(){
 /* Reopening only undoes what the rule did. Rows answered by hand keep their
    codes — the rule was wrong, not the day you sat and decided. */
 function removeRule(mk,reopen){
+  checkpoint(null,"removed the "+mk+" rule"); closeCheckpoint();
   const bk=B();
   if(!bk.rules[mk]) return;
   let back=0;
@@ -4211,6 +4278,7 @@ $("#btnResetLines").addEventListener("click",()=>{
   markDirty(); renderTracks(); renderAll(); toast("Tracker lines reset");
 });
 
+$("#rowList").addEventListener("click",e=>{ if(e.target.closest("[data-undo]")){ e.stopPropagation(); undoLast(); } });
 $("#filterChips").addEventListener("click",e=>{
   const b=e.target.closest(".chip"); if(!b) return;
   leaveReportCtx();
@@ -4238,6 +4306,11 @@ document.addEventListener("keydown",e=>{
   const inPick=e.target.id==="pickInput";
   if((tag==="input"&&!inPick)||tag==="textarea"||tag==="select") return;
   const t=currentTx();
+  /* ⌘Z / Ctrl+Z takes back the last answer — unless there is text in the
+     search box, where it undoes typing as usual. */
+  if((e.metaKey||e.ctrlKey)&&!e.shiftKey&&(e.key==="z"||e.key==="Z")&&!(inPick&&pickQ)){
+    e.preventDefault(); undoLast(); return;
+  }
   if(e.metaKey||e.ctrlKey||e.altKey) return;
 
   if(e.key==="ArrowDown"||e.key==="ArrowUp"){
