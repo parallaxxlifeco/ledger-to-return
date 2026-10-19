@@ -11,7 +11,7 @@
   --income:#256F4B; --incomesoft:#E1F0E8;
   /* Which book a pick list answers for: ATO navy for the return, green for his
      own sheets. */
-  --ato:#1D4F9C; --atosoft:#E4ECF8; --sheet:#1F7A4D; --sheetsoft:#E2F2E9;
+  --ato:#1D4F9C; --atosoft:#E4ECF8; --sheet:#1F7A4D; --sheetsoft:#E2F2E9; --sug:#D0342C;
   --warn:#8E5C0C; --warnsoft:#F8EEDA;
   --crit:#9C3729; --critsoft:#F8E6E2;
   --shadow:0 1px 2px rgba(16,30,38,.06),0 8px 24px -12px rgba(16,30,38,.18);
@@ -29,7 +29,7 @@
     --ink:#E4EBEF; --ink2:#A4B2BB; --ink3:#76858F;
     --accent:#5CB3D4; --accentink:#0C1216; --accentsoft:#16323E; --accentline:#2F5D71;
     --income:#63C295; --incomesoft:#123026;
-    --ato:#7FA6EC; --atosoft:#17243A; --sheet:#63C295; --sheetsoft:#12301F;
+    --ato:#7FA6EC; --atosoft:#17243A; --sheet:#63C295; --sheetsoft:#12301F; --sug:#E8584D;
     --warn:#D9A441; --warnsoft:#32270F;
     --crit:#E28471; --critsoft:#391C16;
     --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px -12px rgba(0,0,0,.7);
@@ -48,7 +48,7 @@
   --ink:#E4EBEF; --ink2:#A4B2BB; --ink3:#76858F;
   --accent:#5CB3D4; --accentink:#0C1216; --accentsoft:#16323E; --accentline:#2F5D71;
   --income:#63C295; --incomesoft:#123026;
-  --ato:#7FA6EC; --atosoft:#17243A; --sheet:#63C295; --sheetsoft:#12301F;
+  --ato:#7FA6EC; --atosoft:#17243A; --sheet:#63C295; --sheetsoft:#12301F; --sug:#E8584D;
   --warn:#D9A441; --warnsoft:#32270F;
   --crit:#E28471; --critsoft:#391C16;
   --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px -12px rgba(0,0,0,.7);
@@ -1230,7 +1230,9 @@ function rebuildGroupSlots(){
   number([...new Set(linesFor("business").map(l=>l.group))]);   // and the business ones
 }
 const slotOf=g=>GROUP_SLOT[g]||0;
-const gvar=g=>"--g:var(--cat"+slotOf(g)+")";
+/* The suggested line is red, not a block colour: grey blended into the list
+   and was easy to miss. */
+const gvar=g=>g==="SUGGESTED"?"--g:var(--sug)":"--g:var(--cat"+slotOf(g)+")";
 const lineLabel=k=>{const t=TRK[k];return t?t.label:"";};
 const lineWhere=k=>{const t=TRK[k];return t?SHEET_NAME[t.sheet]+" · "+t.group:"";};
 indexTracks();

@@ -4,6 +4,18 @@ What was built, when, and what you'd need to know to change it. Newest first.
 
 ---
 
+## 19 October 2026 — The suggested line in red
+
+"Can we make that suggested line red — this grey blends in too much and I
+always miss seeing it." The SUGGESTED block at the top of the sheet-line list
+had no block colour of its own, so it fell back to the neutral grey.
+
+`gvar("SUGGESTED")` now uses a dedicated `--sug` token — a clear red
+(#D0342C light, #E8584D dark) — for its heading, wash, edge and selection ring,
+the same way every block's colour works. Change the token to change it.
+
+---
+
 ## 11 October 2026 — The same statement under another name
 
 "Can you remove the duplicate statements and the transactions that might be
