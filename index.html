@@ -407,6 +407,17 @@ em.chip-none{background:var(--warnsoft);color:var(--warn);font-style:normal;font
 em.chip-split{background:var(--surface2);color:var(--ink2);font-style:normal;font-size:10.5px;font-weight:600;
   padding:1px 7px;border-radius:3px;border:1px dashed var(--line)}
 .anshead{display:flex;align-items:center;justify-content:space-between;gap:8px}
+/* The search opens in the right-hand pane, beside the row it is about */
+.whopane{display:flex;flex-direction:column;min-height:0;height:100%;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--surface)}
+.whobar{display:flex;align-items:center;gap:8px;padding:7px 10px;border-bottom:1px solid var(--line);font-size:12px;color:var(--ink2);flex-wrap:wrap}
+.whobar .whoq{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.whobar .whoq b{color:var(--ink)}
+.whobar .seg{display:inline-flex;border:1px solid var(--line);border-radius:6px;overflow:hidden}
+.whobar .seg button{border:0;background:transparent;padding:3px 8px;font:inherit;font-size:11.5px;color:var(--ink2);cursor:pointer}
+.whobar .seg button.on{background:var(--accent);color:var(--accentink)}
+.whobar a{color:var(--accent);font-size:11.5px;text-decoration:none;white-space:nowrap}
+iframe.whoframe{flex:1;min-height:420px;width:100%;border:0;background:#fff}
+a.whois.on{background:var(--accent);color:var(--accentink);border-color:var(--accent)}
 a.whois{display:inline-grid;place-items:center;width:19px;height:19px;border-radius:50%;margin-left:6px;
   border:1px solid var(--accentline);background:var(--surface);color:var(--accent);font-size:11.5px;font-weight:700;
   text-decoration:none;flex:none}
@@ -438,6 +449,7 @@ a.whois:hover{background:var(--accent);color:var(--accentink);border-color:var(-
 .queue .txcard.qcur .line1 .d{color:var(--ink2)}
 .splitmode .sortright{min-height:0;display:flex;flex-direction:column}
 .splitmode .sortright .pickbox{flex:1;min-height:0}
+.splitmode .sortright .whopane{flex:1}
 .splitmode .sortright .pickmenu{flex:1;min-height:0;max-height:none}
 .pickidle{flex:1;border:2px dashed var(--line);border-radius:10px;display:flex;flex-direction:column;
   align-items:center;justify-content:center;gap:6px;text-align:center;padding:30px;color:var(--ink2);font-size:13px}
@@ -2635,6 +2647,7 @@ let curId=null, filter="todo", listQ="", acctQ="", pickQ="", pickSel=0, pickMode
    from what this merchant went to last time. */
 let lineScope=null;
 let splitOpen=null;                 // id of the row whose split form is open
+let whoOpen=null, whoEng="google"; // the row whose web search is open in the right pane, and which engine
 
 const KINDS=[
   {k:"personal", label:"Personal",  key:"P", hint:"living, lifestyle, anything not for the business"},
@@ -2932,11 +2945,31 @@ function whoQuery(t){
     .split(/\s+/).filter(w=>w&&!(/\d{4,}/.test(w))&&!/^x{2}\d+$/i.test(w)).join(" ")
     .replace(/\s+/g," ").trim();
 }
+/* With two panes the search loads in the right-hand one, so the row stays
+   in view while you read. Google is framed through its embeddable mode
+   (igu=1); Bing frames as it is. On a narrow screen there is no right pane,
+   so it opens a new tab as before — and ⌘-click always does. */
+const WHO_ENG={
+  google:{name:"Google",frame:q=>"https://www.google.com/search?igu=1&q="+encodeURIComponent(q),tab:q=>"https://www.google.com/search?q="+encodeURIComponent(q)},
+  bing:{name:"Bing",frame:q=>"https://www.bing.com/search?q="+encodeURIComponent(q),tab:q=>"https://www.bing.com/search?q="+encodeURIComponent(q)}
+};
 function whoBtn(t){
   const q=whoQuery(t); if(!q) return "";
-  return `<a class="whois noprint" href="https://www.google.com/search?q=${encodeURIComponent(q)}" target="_blank" rel="noopener noreferrer"
+  return `<a class="whois noprint${whoOpen===t.id?" on":""}" data-who="${t.id}" href="${WHO_ENG.google.tab(q)}" target="_blank" rel="noopener noreferrer"
     title="Search the web for “${esc(q)}” — who this is and where">?</a>`;
 }
+function whoPanel(t){
+  const q=whoQuery(t), e=WHO_ENG[whoEng]||WHO_ENG.google;
+  return `<div class="whopane">
+    <div class="whobar"><span class="whoq">Searching <b>${esc(q)}</b></span>
+      <span class="seg">${Object.keys(WHO_ENG).map(k=>`<button data-who-eng="${k}" class="${k===whoEng?"on":""}">${WHO_ENG[k].name}</button>`).join("")}</span>
+      <a href="${e.tab(q)}" target="_blank" rel="noopener noreferrer">New tab ↗</a>
+      <button class="btn sm" data-who-close="1" title="Close the search (Esc)">✕ Close</button></div>
+    <iframe class="whoframe" src="${e.frame(q)}" title="Web search for ${esc(q)}" referrerpolicy="no-referrer"
+      sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"></iframe>
+  </div>`;
+}
+function closeWho(){ if(!whoOpen) return false; whoOpen=null; renderList(); focusPick(); return true; }
 function activeCard(t){
   const {head,body,right}=activeParts(t);
   /* Two columns while there is a list to pick from: the transaction and its
@@ -3144,7 +3177,7 @@ function renderSplit(el,seq,more){
       ${fromReport?reportBar(seq.length):`<div class="qhead">${filter==="todo"?"Still to sort":"In this view"} <span>${seq.length}${more?"+":""}</span></div>`}
       <div class="queue">${seq.map(x=>queueRow(x,x.id===t.id?meta:null)).join("")}${more?`<div class="empty" style="padding:14px">Showing the first 250. Clear these and the rest come up.</div>`:""}</div>
     </div>
-    <div class="sortright">${right||rightPlaceholder(t)}</div>`;
+    <div class="sortright">${whoOpen===t.id?whoPanel(t):(right||rightPlaceholder(t))}</div>`;
   wireCards();
   const nq=el.querySelector(".queue");
   nq.scrollTop=keep;
@@ -3164,6 +3197,16 @@ window.addEventListener("resize",()=>{
   const m=splitMode(); if(m!==lastSplit&&$("#rowList")) renderList();
 });
 function wireCards(){
+  $$("#rowList [data-who]").forEach(a=>a.addEventListener("click",e=>{
+    if(!splitMode()||e.metaKey||e.ctrlKey||e.shiftKey) return;   // narrow screen, or asked for a tab
+    e.preventDefault(); e.stopPropagation();
+    const id=a.dataset.who;
+    if(whoOpen===id){ closeWho(); return; }
+    if(id!==curId){ curId=id; resetPick(); }
+    whoOpen=id; renderList();
+  }));
+  $$("#rowList [data-who-eng]").forEach(b=>b.addEventListener("click",e=>{ e.stopPropagation(); whoEng=b.dataset.whoEng; renderList(); }));
+  $$("#rowList [data-who-close]").forEach(b=>b.addEventListener("click",e=>{ e.stopPropagation(); closeWho(); }));
   $$("#rowList [data-back-report]").forEach(b=>b.addEventListener("click",e=>{ e.stopPropagation(); goBackToReport(); }));
   $$("#rowList .txcard").forEach(c=>c.addEventListener("mousedown",ev=>{
     if(ev.target.closest("button,input,label,a")) return;
@@ -3210,7 +3253,7 @@ function focusPick(){
 /* A rule is opt-in, every time. It used to default on, which is how one
    Gojek answer — food, that day — quietly became every Gojek ride after it.
    Nothing is carried forward unless it is asked for. */
-function resetPick(){ pickQ=""; pickSel=0; pickMode=null; ruleOn=false; lineScope=null; splitOpen=null; closeCheckpoint(); }
+function resetPick(){ pickQ=""; pickSel=0; pickMode=null; ruleOn=false; lineScope=null; splitOpen=null; whoOpen=null; closeCheckpoint(); }
 /* ---- undo ----
    Before each answer the book is snapshotted — rows, rules, the learned
    category→line map — so a wrong press can be taken back in one step. A
@@ -3255,7 +3298,7 @@ function setKind(kind){
   t.line=null; t.auto=false;
   t.kind=kind;
   t.tax=kind==="personal"?"x_personal":kind==="transfer"?"x_transfer":null;
-  pickMode=null; pickQ=""; pickSel=0;
+  pickMode=null; pickQ=""; pickSel=0; whoOpen=null;     // answering brings the list back
   if(kind==="transfer"){                       // the whole answer, in one press
     applyRule(t,{k:"transfer",l:null,t:"x_transfer"});
     advance(nextId);
@@ -4346,7 +4389,7 @@ document.addEventListener("keydown",e=>{
     if(hits.length&&$("#pickInput")) choose(hits[pickSel].key);
     return;
   }
-  if(e.key==="Escape"){ e.preventDefault(); if(pickQ){pickQ="";pickSel=0;renderList();focusPick();} return; }
+  if(e.key==="Escape"){ e.preventDefault(); if(pickQ){pickQ="";pickSel=0;renderList();focusPick();} else closeWho(); return; }
   /* Backspace clears this row only. Rules are removed in the rules panel,
      where what one has already done is visible before you kill it. */
   if(e.key==="Backspace"&&!pickQ){ e.preventDefault(); unassign(); return; }

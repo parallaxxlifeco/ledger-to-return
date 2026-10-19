@@ -4,6 +4,15 @@ What was built, when, and what you'd need to know to change it. Newest first.
 
 ---
 
+## 2026-10-19 — The ? search opens beside the row, not in a new tab
+
+- With two panes, **?** loads the web search in the right-hand pane, so the row stays in view while you read. Google (its embeddable mode) by default, with a **Bing** switch; **New tab ↗** is there if a page won't show inside.
+- **Esc** or **✕ Close** puts the list back. Answering the row (P/B/T/O) or moving to another row closes it too.
+- On a narrow screen there is no right pane, so it still opens a tab; ⌘-click always does.
+- Test: `test/who.test.mjs`.
+
+---
+
 ## 19 October 2026 — Undo, "who is this?", and only the suggested row red
 
 **"Sometimes I hit the wrong button … can you add an undo button to reverse the
