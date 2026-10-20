@@ -4,6 +4,16 @@ What was built, when, and what you'd need to know to change it. Newest first.
 
 ---
 
+## 2026-10-20 — "Left out" shows an amount
+
+- The report's **Left out · not business** card now leads with the money that went out and isn't business (personal, drawings, partner's share, tax, loan…), with the three biggest parts listed.
+- Money in that isn't business (personal in, owner funds) is on its own line. Transfers are counted but not added — money moving between your own accounts shows up twice, once leaving and once arriving.
+- Stripe sales are no longer counted in this card; they have their own box. That's why the count drops by about 586.
+- Hover the card for every category with its count and total.
+- Test: `test/leftout.test.mjs`.
+
+---
+
 ## 2026-10-19 — The ? search opens beside the row, not in a new tab
 
 - With two panes, **?** loads the web search in the right-hand pane, so the row stays in view while you read. Google (its embeddable mode) by default, with a **Bing** switch; **New tab ↗** is there if a page won't show inside.

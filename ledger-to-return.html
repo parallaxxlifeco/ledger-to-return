@@ -3585,6 +3585,30 @@ let reportView="tax", hideEmpty=true;
 /* Every row in the active book, converted, with its tax code resolved. */
 function taxRows(){ return B().tx.map(t=>({...enrich(t),taxCat:taxOf(t)})); }
 
+/* "Left out" — the money that is not the business, as an amount for his own
+   picture of the year. Stripe sales are kept out of it (they have their own
+   box). Transfers are counted but not added: money moving between his own
+   accounts shows up once leaving and once arriving, so a sum of it means
+   nothing. The headline is what went out; money in is a line of its own. */
+const LEFT_SHORT={x_personal:"personal",x_partner:"partner's share",x_drawings:"drawings",x_tax:"tax",
+  x_gst:"GST",x_loan:"loan",x_personal_in:"personal in",x_capital:"owner funds in"};
+function leftOutStat(d){
+  const bs=d.excluded.filter(b=>b.cat.key!=="x_income_reported");
+  const tr=bs.filter(b=>b.cat.key==="x_transfer"), rest=bs.filter(b=>b.cat.key!=="x_transfer");
+  const n=bs.reduce((s,b)=>s+b.n,0), nTr=tr.reduce((s,b)=>s+b.n,0);
+  let out=0, inn=0; const parts=[];
+  for(const b of rest){
+    let o=0;
+    for(const t of b.rows){ const a=t.aud||0; if(a<0) o-=a; else inn+=a; }
+    out+=o; if(o>=0.5) parts.push([LEFT_SHORT[b.cat.key]||b.cat.label.toLowerCase(),o]);
+  }
+  parts.sort((a,b)=>b[1]-a[1]);
+  const tip=bs.map(b=>`${b.cat.label}: ${b.n} items, ${fmtAUD0(b.rows.reduce((s,t)=>s+(t.aud||0),0))}`).join("\n");
+  return `<div class="stat" title="${esc(tip)}"><span class="lbl">Left out · not business</span>
+    <div class="v" style="color:var(--ink3)">${fmtAUD0(out)}</div>
+    <div class="sub">${n} items · out${parts.length?": "+parts.slice(0,3).map(([l,a])=>`${l} ${fmtAUD0(a)}`).join(" · "):""}</div>
+    <div class="sub">${inn>=0.5?`${fmtAUD0(inn)} in · `:""}${nTr} transfer${nTr===1?"":"s"}, not added</div></div>`;
+}
 function reportData(){
   const fy=activeFY();
   const rows=taxRows();
@@ -3950,7 +3974,7 @@ function renderTaxReport(){
       <div class="stat"><span class="lbl">Net before tax</span><div class="v" style="color:${netAll<0?"var(--crit)":"var(--ink)"}">${fmtAUD0(netAll)}</div>
         <div class="sub">with Stripe · official, without it: ${fmtAUD0(net)}</div></div>`;
       })()}
-      <div class="stat"><span class="lbl">Left out</span><div class="v" style="color:var(--ink3)">${d.excluded.reduce((s,b)=>s+b.n,0)}</div><div class="sub">personal, transfers, drawings</div></div>
+      ${leftOutStat(d)}
     </div>
 
     <div style="display:flex;flex-direction:column;gap:10px;margin-top:18px">
