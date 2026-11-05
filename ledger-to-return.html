@@ -2251,9 +2251,9 @@ function renderPreview(){
       <td class="mono" style="font-size:11px;color:var(--ink3)">${e.rateSrc?niceDate(e.rateSrc):"—"}${flag}</td></tr>`;
   }).join("");
   $("#prevTable").innerHTML=head+"<tbody>"+(rows||`<tr><td colspan="6" style="color:var(--crit)">No rows could be read. Check the Date and Amount columns above.</td></tr>`)+"</tbody>";
-  const existing=knownIds(B());
-  const dupes=out.filter(t=>isKnown(existing,t)).length;
-  $("#dupNote").innerHTML=`${out.length} ready${bad.length?` · <span style="color:var(--warn)">${bad.length} skipped (no usable date or amount)</span>`:""}${dupes?` · <span style="color:var(--warn)">${dupes} already loaded, will be skipped</span>`:""} · dates read as ${fmt==="mdy"?"month/day/year":fmt==="ymd"?"year/month/day":"day/month/year"}`;
+  const plan=importPlan(out,B());
+  const dupes=plan.filter(x=>x==="known").length, overlaps=plan.filter(x=>x==="overlap").length;
+  $("#dupNote").innerHTML=`${plan.filter(x=>x==="add").length} ready${bad.length?` · <span style="color:var(--warn)">${bad.length} skipped (no usable date or amount)</span>`:""}${dupes?` · <span style="color:var(--warn)">${dupes} already loaded, will be skipped</span>`:""}${overlaps?` · <span style="color:var(--warn)">${overlaps} already in from another statement, will be skipped</span>`:""} · dates read as ${fmt==="mdy"?"month/day/year":fmt==="ymd"?"year/month/day":"day/month/year"}`;
   $("#btnAdd").disabled=out.length===0||!!PARSED.block;
 }
 /* Stripe gives every movement its own id, so two identical $50 tickets bought
@@ -2275,6 +2275,90 @@ function knownIds(bk){
 }
 const contentKey=t=>"c|"+t.date+"|"+Math.round(t.amt*100)+"|"+String(t.desc||"").slice(0,40).toLowerCase();
 const isKnown=(known,t)=>known.has(txId(t))||(!t.ref&&known.has(contentKey(t)));
+/* ---- the same transaction from two statements ----
+   One card can come in twice in two shapes: the PDF statement and NetBank's
+   export write the same purchase as "Merc Lounge Badung Kab" and
+   "MERC LOUNGE BADUNG KAB. IDN ##0626 717,600.00", so the description match
+   above misses it and the 1–9 June 2026 rows went in twice (−$985). The loose
+   key is what doesn't change between shapes: the date, the currency, the
+   amount to the cent, and the first word of the merchant. Counted, not just
+   seen — two identical coffees on one statement match two on the other, not
+   one. Stripe rows carry their own reference and are left out. */
+const merchantWord=d=>String(d||"").toLowerCase().replace(/##.*$/,"").replace(/[^a-z0-9]+/g," ").trim().split(" ")[0]||"";
+const looseKey=t=>"l|"+t.date+"|"+(t.cur||"")+"|"+Math.round(t.amt*100)+"|"+merchantWord(t.desc);
+/* A split row stands for its whole original, once. */
+const looseUnit=t=>t.split?(t.split.part===1?{...t,amt:t.split.amt}:null):t;
+function loosePool(bk){
+  const m=new Map();
+  for(const t of bk.tx){
+    if(t.ref||t.src==="stripe") continue;
+    const u=looseUnit(t); if(!u) continue;
+    const k=looseKey(u); m.set(k,(m.get(k)||0)+1);
+  }
+  return m;
+}
+/* What an import will do with each row: add it, or skip it as already loaded
+   — exactly, or as the same transaction from another statement. */
+function importPlan(out,bk){
+  const known=knownIds(bk), pool=loosePool(bk), seen=new Set();
+  return out.map(t=>{
+    const lk=!t.ref&&t.src!=="stripe"?looseKey(t):null;
+    const take=()=>{ if(lk&&pool.get(lk)>0){ pool.set(lk,pool.get(lk)-1); return true; } return false; };
+    if(isKnown(known,t)||seen.has(txId(t))){ take(); return "known"; }
+    if(take()) return "overlap";
+    seen.add(txId(t));
+    return "add";
+  });
+}
+/* Duplicates already loaded: rows on the same loose key in more than one
+   account. Grouped by the set of accounts they sit in, so a statement loaded
+   three times under three names is one decision. */
+function findOverlaps(){
+  const bk=B(), by=new Map(), size={};
+  for(const t of bk.tx){
+    size[t.acct]=(size[t.acct]||0)+1;
+    if(t.ref||t.src==="stripe") continue;
+    const u=looseUnit(t); if(!u) continue;
+    const k=looseKey(u);
+    if(!by.has(k)) by.set(k,new Map());
+    const m=by.get(k); if(!m.has(t.acct)) m.set(t.acct,[]); m.get(t.acct).push(t);
+  }
+  const groups=new Map();
+  for(const [k,m] of by){
+    if(m.size<2) continue;
+    const accts=[...m.keys()].sort();
+    const sig=accts.join("\u0000");
+    if(!groups.has(sig)) groups.set(sig,{accts,keys:[],n:0});
+    const g=groups.get(sig); g.keys.push(m); g.n+=Math.min(...[...m.values()].map(r=>r.length));
+  }
+  return [...groups.values()].map(g=>{
+    g.keep=g.accts.slice().sort((a,b)=>(size[b]-size[a])||a.localeCompare(b))[0];
+    return g;
+  });
+}
+/* Remove the copies outside the account kept. A copy that was sorted hands its
+   answer to the kept row if that one wasn't. A split copy goes with all of its
+   parts. */
+function removeOverlaps(g,keep){
+  const bk=B(); checkpoint(null,"duplicates removed"); closeCheckpoint();
+  const drop=new Set(); let n=0;
+  for(const m of g.keys){
+    const kept=m.get(keep)||[];
+    for(const [a,rows] of m){
+      if(a===keep) continue;
+      rows.slice(0,kept.length).forEach((r,i)=>{
+        const k=kept[i];
+        if(isTrack()&&!settled(k)&&settled(r)&&!r.split&&!k.split){ k.kind=r.kind; k.tax=r.tax; k.line=r.line; if(r.noSheet) k.noSheet=true; }
+        if(r.split) bk.tx.forEach(x=>{ if(x.split&&x.split.of===r.split.of) drop.add(x.id); });
+        else drop.add(r.id);
+        n++;
+      });
+    }
+  }
+  bk.tx=bk.tx.filter(t=>!drop.has(t.id));
+  markDirty(); renderAll();
+  toast(`${n} duplicate${n===1?"":"s"} removed — kept the ones in “${keep}”`);
+}
 function txId(t){
   if(t.ref) return hashId("ref|"+t.ref);
   return hashId([t.date,t.cur,t.amt,t.acct,t.desc.slice(0,40)].join("|"));
@@ -2313,12 +2397,12 @@ function stripePreset(rec,rule){
 function addParsed(){
   const {out}=buildRows();
   const bk=B();
-  const existing=knownIds(bk);
+  const plan=importPlan(out,bk);
   let added=0,auto=0,fromStripe=0,seeded=0,stripeSales=0;
-  for(const t of out){
+  const overlapped=plan.filter(x=>x==="overlap").length;
+  for(const [i,t] of out.entries()){
     const id=txId(t);
-    if(isKnown(existing,t)) continue;
-    existing.add(id);
+    if(plan[i]!=="add") continue;
     const mk=t.mk||merchantKey(t.desc);
     const rule=bk.rules[mk];
     const rec={...t,id,mk,cat:null,auto:false};
@@ -2359,7 +2443,7 @@ function addParsed(){
   $("#mapCard").style.display="none";
   $("#impText").value=""; PARSED=null;
   renderAll();
-  toast(added?`${added} added${auto?`, ${auto} filled in from what you've sorted before`:""}${
+  toast(added?`${added} added${overlapped?`, ${overlapped} skipped as already in from another statement`:""}${auto?`, ${auto} filled in from what you've sorted before`:""}${
     fromStripe?`, ${fromStripe} fees and payouts filled in from Stripe's own labels`:""}${
     stripeSales?`, ${stripeSales} sales put on their event's line`:""}`:"Nothing new — those rows were already loaded");
   if(added) go("sort");
@@ -3665,7 +3749,17 @@ function renderAccounts(){
       <td class="r" style="white-space:nowrap"><button class="btn sm" data-ren="${esc(a)}">Rename</button>
         <button class="btn sm danger" data-del="${esc(a)}">Remove</button></td></tr>`;
   }).join("");
-  box.innerHTML=`<div class="tablewrap"><table><thead><tr><th>Account</th><th>Currencies</th><th class="r">Rows</th><th>Covering</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  const ov=findOverlaps();
+  const ovHtml=ov.map((g,i)=>`<div class="flagbox warn" style="margin-top:12px;align-items:center;flex-wrap:wrap;gap:10px">
+      <div style="flex:1;min-width:260px"><div class="ft">${g.n} transaction${g.n===1?"":"s"} loaded twice</div>
+        <div class="fd">The same date, amount and merchant in ${g.accts.map(a=>`“${esc(a)}”`).join(g.accts.length===2?" and ":", ")}.</div></div>
+      <label class="hint" style="display:flex;align-items:center;gap:6px">Keep <select data-ovkeep="${i}" style="width:auto">${g.accts.map(a=>`<option${a===g.keep?" selected":""}>${esc(a)}</option>`).join("")}</select></label>
+      <button class="btn sm pri" data-ovgo="${i}">Remove the copies</button></div>`).join("");
+  box.innerHTML=`<div class="tablewrap"><table><thead><tr><th>Account</th><th>Currencies</th><th class="r">Rows</th><th>Covering</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>${ovHtml}`;
+  box.querySelectorAll("[data-ovgo]").forEach(b=>b.addEventListener("click",()=>{
+    const g=ov[+b.dataset.ovgo], keep=box.querySelector(`[data-ovkeep="${b.dataset.ovgo}"]`).value;
+    removeOverlaps(g,keep);
+  }));
   /* Rename an account — or fold it into another by giving it that one's name. */
   box.querySelectorAll("[data-ren]").forEach(b=>b.addEventListener("click",()=>{
     const a=b.dataset.ren;
