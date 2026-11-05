@@ -4,6 +4,19 @@ What was built, when, and what you'd need to know to change it. Newest first.
 
 ---
 
+## 2026-11-05 — Running total, both ways
+
+"I think the debts are carried forward but the profits aren't… Let's stay with running total. Use true figures from the beginning of the sheets that run both ways."
+
+- **What the sheets did:** "Debt Carry Over" was typed by hand each month and only ever carried a shortfall — a surplus reset it to $0 (Dec 2024 +$11,449, Jan 2025 +$2,981, Sep 2025 +$3,629 lost), and three 2026 carries didn't match the month before. It also sat inside "Total expenses", so every 2026 month looked like $19–22k of spending.
+- **Recalculated from his sheets, both ways** (month = income − spending without the carry; Feb 2024 income from INCOME DETAILED because the EXPENSES cell shows #VALUE!; Dec 2025 uses the second, completed DEC ACT column): starting −$395 carried into Feb 2024, the running total was **+$16,523** at end 2024, **+$17,979** at end 2025, and **+$7,985 at the end of June 2026** — against −$16,592 "to earn back" on the sheet.
+- **In the app:** Report → Sheet actuals now opens with a **Running total** card: the total now (green "buffer" / red "to earn back"), and per month the **Month result** and **Running total**. It is never reset by the year.
+- **Starting point:** set once in the card (`S.running` = {open, asOf}) — saved with the data, not in the code (the repo is public). Set it to **7984.62 at the end of June 2026**; from July 2026 each month is calculated from what's sorted.
+- **Month result:** every sorted row on a sheet line, both sheets, money in less money out, refunds included. Not counted: transfers, partner's shares, personal money in, Stripe fees — the same as the sheets.
+- Test: `test/running.test.mjs`.
+
+---
+
 ## 2026-11-05 — Explanations folded away
 
 "Clean up unnecessary elements… explanations of how it works… can be folded into its own little tab."
