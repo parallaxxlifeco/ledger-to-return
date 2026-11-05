@@ -544,10 +544,6 @@ table.inner td,table.inner th{font-size:12px;padding:5px 8px}
 <div class="app">
 <header class="topbar">
   <div class="brand"><b>Ledger to Return</b><span id="fyLabel">FY 2025–26</span></div>
-  <nav class="books" role="tablist" aria-label="Books">
-    <button class="bookbtn" role="tab" data-book="tax" aria-selected="false">Tax return<em>FY 2025–26</em></button>
-    <button class="bookbtn" role="tab" data-book="track" aria-selected="true">Tracking<em>ongoing</em></button>
-  </nav>
   <nav class="stages" role="tablist" aria-label="Stages">
     <button class="stage" role="tab" aria-selected="true" data-pane="import"><i>01</i>Import</button>
     <button class="stage" role="tab" aria-selected="false" data-pane="sort"><i>02</i>Sort</button>
@@ -2073,6 +2069,7 @@ async function persist(){
 }
 function adoptRemote(remote){
   S=Object.assign(S,remote);
+  S.book="track";
   S.lineFor=remote.lineFor||S.lineFor||{};
   if(Array.isArray(remote.tracks)&&remote.tracks.length){ TRACKS=remote.tracks; indexTracks(); S.tracks=TRACKS; }
   normaliseTrackKeys();
@@ -2116,6 +2113,7 @@ async function boot(){
   try{ local=migrate(JSON.parse(localStorage.getItem(LSKEY))); }catch(e){}
   if(!local){ try{ local=migrate(JSON.parse(localStorage.getItem(LSKEY_V1))); }catch(e){} }
   if(local) S=Object.assign(S,local);
+  S.book="track";                // one book now — see mergeTaxBook
   if(Array.isArray(S.tracks)&&S.tracks.length){ TRACKS=S.tracks; indexTracks(); }
   normaliseTrackKeys();          // one key shape, before anything tries to match on it
   pruneRetired();
@@ -2132,7 +2130,7 @@ async function boot(){
     catch(e){ console.warn("drive silent sign-in failed",e); Store=localStore; }
   }
   renderStorage();
-  if(Store.mode==="local"){ if(S.books.tax.tx.length||S.books.track.tx.length) localSave(); askForDrive(); return; }
+  if(Store.mode==="local"){ if(S.books.tax.tx.length||S.books.track.tx.length) localSave(); mergeTaxBook(); askForDrive(); return; }
 
   try{
     const remote=await Store.load();
@@ -2147,6 +2145,7 @@ async function boot(){
     console.warn("load failed",e);
     renderStorage("saved here only",true);
   }
+  mergeTaxBook();
   renderAll(); renderStorage();
 }
 
@@ -2482,6 +2481,20 @@ function stripePreset(rec,rule){
 }
 function addParsed(){
   const {out}=buildRows();
+  const {added,auto,fromStripe,stripeSales,overlapped}=addRows(out);
+  markDirty();
+  $("#mapCard").style.display="none";
+  $("#impText").value=""; PARSED=null;
+  renderAll();
+  toast(added?`${added} added${overlapped?`, ${overlapped} skipped as already in from another statement`:""}${auto?`, ${auto} filled in from what you've sorted before`:""}${
+    fromStripe?`, ${fromStripe} fees and payouts filled in from Stripe's own labels`:""}${
+    stripeSales?`, ${stripeSales} sales put on their event's line`:""}`:"Nothing new — those rows were already loaded");
+  if(added) go("sort");
+}
+/* The rows into the open book: duplicates skipped, rules and Stripe's own
+   labels applied. Shared by Import and by bringing the old Tax return book's
+   rows across. */
+function addRows(out){
   const bk=B();
   const plan=importPlan(out,bk);
   let added=0,auto=0,fromStripe=0,seeded=0,stripeSales=0;
@@ -2525,14 +2538,29 @@ function addParsed(){
     bk.tx.push(rec); added++;
   }
   bk.tx.sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:0);
-  markDirty();
-  $("#mapCard").style.display="none";
-  $("#impText").value=""; PARSED=null;
-  renderAll();
-  toast(added?`${added} added${overlapped?`, ${overlapped} skipped as already in from another statement`:""}${auto?`, ${auto} filled in from what you've sorted before`:""}${
-    fromStripe?`, ${fromStripe} fees and payouts filled in from Stripe's own labels`:""}${
-    stripeSales?`, ${stripeSales} sales put on their event's line`:""}`:"Nothing new — those rows were already loaded");
-  if(added) go("sort");
+  return {added,auto,fromStripe,stripeSales,overlapped,seeded};
+}
+/* ---- one book ----
+   There used to be two books — "Tax return" (ATO categories only) and
+   "Tracking" (the sheets and the return together) — with a switch at the top.
+   Tracking does everything the other did, and the switch is how two Saver
+   statements went into the wrong one. Now the app is always Tracking. Rows that
+   were only ever loaded into the old book are brought across once, as if
+   imported here: duplicates skipped, rules applied. The old book's data is
+   left in the file, untouched, and not shown. */
+function mergeTaxBook(){
+  if(S.book!=="track") S.book="track";
+  const old=S.books.tax;
+  if(S.taxMerged||!old||!old.tx.length) return 0;
+  const names=[...new Set(S.books.track.tx.map(t=>t.acct))].sort((a,b)=>b.length-a.length);
+  const acctFor=a=>names.find(n=>a===n||a.startsWith(n+" "))||a;
+  const rows=old.tx.map(t=>({date:t.date,desc:t.desc,cur:t.cur,amt:t.split?t.split.amt:t.amt,acct:acctFor(t.acct)}))
+    .filter((t,i,arr)=>arr.findIndex(x=>x.date===t.date&&x.desc===t.desc&&x.amt===t.amt&&x.acct===t.acct)===i);
+  const r=addRows(rows);
+  S.taxMerged={at:new Date().toISOString(),n:r.added};
+  markDirty(); renderAll();
+  if(r.added) toast(`${r.added} row${r.added===1?"":"s"} from the old Tax return book brought into Tracking — they're in Sort`);
+  return r.added;
 }
 
 /* ========================= STORAGE =========================
@@ -2748,6 +2776,7 @@ async function connectDrive(){
     setDriveLinked(true);
     const remote=await Store.load();
     const how=await reconcile(remote);
+    mergeTaxBook();
     driveFailed=false;
     toast({loaded:"Connected — loaded your latest from Drive",pushed:"Connected — Drive now has your changes from this browser",
       same:"Connected — saving to Drive",["kept-local"]:"Connected — kept this browser's version; Drive's is saved as a snapshot",

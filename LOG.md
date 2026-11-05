@@ -4,6 +4,18 @@ What was built, when, and what you'd need to know to change it. Newest first.
 
 ---
 
+## 2026-11-05 — One book: the Tax return / Tracking switch is gone
+
+"There shouldn't be 2 different places to upload — just a single place."
+
+- **Why:** the two Saver statements for Aug 2025 – Jul 2026 went into the old "Tax return" book (ATO categories only), so in Tracking they were missing and in Tax return there was no Personal or sheet line to choose.
+- **Now:** no switch; the app always opens in Tracking (`S.book="track"` on boot and on loading from Drive). Tracking already does the return.
+- **`mergeTaxBook`**, once: rows only ever loaded into the old book are brought across as if imported (`addRows`, split out of `addParsed`): duplicates skipped, rules applied, put on the Tracking account whose name the old one starts with ("CommBank NetBank Saver 1986 - Parallaxx Income AUD" → "CommBank NetBank Saver 1986"). `S.taxMerged` stops it repeating. The old book's data stays in the file, not shown.
+- His data: 30 rows come across (Aug 2025 – May 2026). The 15 Amazon payouts fill in from his rule; 11 Credit Interest fill in as Transfer from an old rule (re-file one as Bank interest with Make a rule and the rest follow); 6 transfers to xx1994 wait in Sort.
+- Test: `test/onebook.test.mjs`.
+
+---
+
 ## 2026-11-05 — Bank interest
 
 "On the ATO sheet there is nothing for logging interest payment in?"
