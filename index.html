@@ -3991,6 +3991,15 @@ function runningSeries(){
   while(last&&ym<last){ ym=ymAdd(ym,1); const m=res[ym]||0; run+=m; series[ym]={month:m,run}; }
   return {series,last:ym,run};
 }
+/* The month's move in the running total, as a percentage of where it stood the
+   month before. Measured against the size of that total, so a smaller shortfall
+   reads as a rise and a bigger one as a fall, whichever side of zero it is on.
+   Nothing to compare against at the start, or from exactly zero. */
+function runChange(rs,ym){
+  const cur=rs.series[ym], prev=rs.series[ymAdd(ym,-1)];
+  if(!cur||!prev||cur.month==null||Math.abs(prev.run)<0.005) return null;
+  return (cur.run-prev.run)/Math.abs(prev.run)*100;
+}
 function runningCard(year){
   const rs=runningSeries(), r=S.running||{};
   const tone=v=>v<0?"var(--crit)":"var(--income)";
@@ -4016,6 +4025,10 @@ function runningCard(year){
     <div class="tablewrap"><table class="grid"><thead><tr><th style="min-width:150px"></th>${MONTHS.map(m=>`<th class="r">${m}</th>`).join("")}</tr></thead><tbody>
       <tr><td>Month result</td>${cells.map(c=>`<td class="r mono">${c.v&&c.v.month!=null?fmt(c.v.month):"·"}</td>`).join("")}</tr>
       <tr><td><b>Running total</b></td>${cells.map(c=>`<td class="r mono" style="font-weight:600">${c.v?fmt(c.v.run):"·"}</td>`).join("")}</tr>
+      <tr><td class="hint" title="How much the running total moved against the month before, as a share of where it stood">vs last month</td>${cells.map(c=>{
+        const p=runChange(rs,c.ym);
+        return `<td class="r mono" style="font-size:11px">${p==null?"·":Math.abs(p)<0.05?`<span class="hint">0%</span>`:`<span style="color:${tone(p)}">${p<0?"▼":"▲"} ${Math.abs(p)>=1000?"999+":Math.abs(p).toFixed(Math.abs(p)<10?1:0)}%</span>`}</td>`;
+      }).join("")}</tr>
     </tbody></table></div>
   </div></div>`;
 }

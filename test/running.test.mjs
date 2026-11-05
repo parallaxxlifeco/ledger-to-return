@@ -46,6 +46,10 @@ const st = await p.evaluate(() => {
 check('the starting point is saved with the data', st.saved && st.saved.open === 7984.62 && st.saved.asOf === '2026-06', JSON.stringify(st.saved));
 check('July: +1000 in, −300 out = +700', Math.abs(st.jul.month - 700) < 0.01 && Math.abs(st.jul.run - 8684.62) < 0.01, JSON.stringify(st.jul));
 check('August: −200, refund +50, the transfer not counted = −150', Math.abs(st.aug.month + 150) < 0.01 && Math.abs(st.aug.run - 8534.62) < 0.01, JSON.stringify(st.aug));
+const pct = await p.evaluate(() => { const r = runningSeries(); return {jun: runChange(r, '2026-06'), jul: runChange(r, '2026-07'), aug: runChange(r, '2026-08'),
+  row: [...document.querySelectorAll('.runcard tbody tr')][2].innerText.replace(/\s+/g, ' ')}; });
+check('vs last month: none at the start, +8.8% in July, −1.7% in August', pct.jun === null && Math.abs(pct.jul - 700 / 7984.62 * 100) < 0.01
+  && Math.abs(pct.aug + 150 / 8684.62 * 100) < 0.01 && /▲ 8\.8% ▼ 1\.7%/.test(pct.row), JSON.stringify(pct));
 check('rows before the start are not counted again', Math.abs(st.run - 8534.62) < 0.01, String(st.run));
 check('the card shows the total now, as a buffer, at the last month', /\+\$8,535 buffer · end of Aug 2026/.test(st.card), st.card.slice(0, 120));
 
@@ -57,6 +61,8 @@ const neg = await p.evaluate(() => {
   const r = runningSeries();
   return {jan: r.series['2027-01'], dec: r.series['2026-12'], card: document.querySelector('.runcard').innerText.replace(/\s+/g, ' ')};
 });
+const negPct = await p.evaluate(() => runChange(runningSeries(), '2027-01'));
+check('a fall from +450 to −1,550 reads as about −444%', Math.abs(negPct + 2000 / 450 * 100) < 0.01, String(negPct));
 check('carries across the new year without resetting', Math.abs(neg.dec.run - 450) < 0.01 && Math.abs(neg.jan.run + 1550) < 0.01, JSON.stringify(neg));
 check('and below zero it reads "to earn back"', /−\$1,550 to earn back · end of Jan 2027/.test(neg.card), neg.card.slice(0, 120));
 

@@ -4,6 +4,14 @@ What was built, when, and what you'd need to know to change it. Newest first.
 
 ---
 
+## 2026-11-05 — Running total: % vs last month
+
+- A third row under the running total, **vs last month**: how far the total moved, as a percentage of where it stood the month before (`runChange`). ▲ green up, ▼ red down, grey 0% for no move.
+- Measured against the size of the previous total, so a smaller shortfall reads as a rise whichever side of zero it is on. Blank at the starting month and from exactly $0; shown as 999+% past that.
+- Test: added to `test/running.test.mjs`.
+
+---
+
 ## 2026-11-05 — Running total, both ways
 
 "I think the debts are carried forward but the profits aren't… Let's stay with running total. Use true figures from the beginning of the sheets that run both ways."
