@@ -4,6 +4,19 @@ What was built, when, and what you'd need to know to change it. Newest first.
 
 ---
 
+## 2026-11-05 — The same transaction from two statements, loaded once
+
+"Can we build a no duplicate feature then? Same transaction, amount, time, date gets skipped / stripped?"
+
+- **Why:** "Mastercard June 2026" (NetBank's export, all of June) overlapped the card PDF already loaded to 10 June. The export writes "MERC LOUNGE BADUNG KAB. IDN ##0626 …" where the PDF writes "Merc Lounge Badung Kab", so the old description match missed it and 21 rows (−$985) went in twice.
+- **Match (`looseKey`):** date + currency + amount to the cent + first word of the merchant (after dropping "##…" and punctuation). Counted, so two identical coffees on one statement match two on the other. Stripe rows are never matched; they have their own reference. A split row stands for its whole original.
+- **On import (`importPlan`):** copies are skipped. The preview says "N already in from another statement, will be skipped".
+- **Already loaded (`findOverlaps` / `removeOverlaps`):** What's loaded lists each set of accounts with rows loaded twice, with **Keep [account]** and **Remove the copies**. Default keep is the bigger account. A sorted copy hands its answer to an unsorted kept row. Undo is in Sort (↶ / ⌘Z).
+- His data today: 21 June rows (keep "CommBank card 4345") and the Saver loaded three times (21 each, keep "parallaxx income").
+- Test: `test/overlap.test.mjs`.
+
+---
+
 ## 2026-11-05 — Running total: % vs last month
 
 - A third row under the running total, **vs last month**: how far the total moved, as a percentage of where it stood the month before (`runChange`). ▲ green up, ▼ red down, grey 0% for no move.
