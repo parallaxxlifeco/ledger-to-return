@@ -3939,6 +3939,78 @@ function renderReport(){
   if(reportView==="sheets") renderSheetsReport(); else renderTaxReport();
 }
 
+/* ---- the running total ----
+   His sheets carried a month's shortfall into the next as "Debt Carry Over",
+   typed by hand, and only ever the shortfall: a good month reset it to zero, so
+   December 2024's +$11,449 vanished, and three 2026 carries didn't match the
+   month before. Here it is calculated, and it runs both ways — a good month
+   builds it up, a bad one takes it down. It is never reset by the year.
+
+   It starts from a figure he sets (S.running: the total at the end of one
+   month, worked out from his sheets), and from the month after, each month's
+   result is taken from what is sorted here: every row on a sheet line, money
+   in on an income line and money out on an expense line, refunds included.
+   Rows on no line — transfers, partner's shares, personal money in, Stripe
+   fees — are not counted, the same as on his sheets. */
+function monthResults(){
+  const m={};
+  for(const t of B().tx){
+    const k=lineOf(t);
+    if(!k||!TRK[k]||!settled(t)) continue;
+    const e=enrich(t); if(e.aud==null) continue;
+    const ym=t.date.slice(0,7); m[ym]=(m[ym]||0)+e.aud;
+  }
+  return m;
+}
+const ymAdd=(ym,n)=>{ let [y,mo]=ym.split("-").map(Number); mo+=n;
+  while(mo>12){mo-=12;y++;} while(mo<1){mo+=12;y--;} return y+"-"+String(mo).padStart(2,"0"); };
+const ymLabel=ym=>MONTHS[+ym.slice(5,7)-1]+" "+ym.slice(0,4);
+function runningSeries(){
+  const r=S.running; if(!r||!/^\d{4}-\d{2}$/.test(r.asOf||"")||!isFinite(+r.open)) return null;
+  const res=monthResults();
+  const last=B().tx.reduce((a,t)=>t.date>a?t.date:a,"").slice(0,7);
+  const series={[r.asOf]:{month:null,run:+r.open}};
+  let ym=r.asOf, run=+r.open;
+  while(last&&ym<last){ ym=ymAdd(ym,1); const m=res[ym]||0; run+=m; series[ym]={month:m,run}; }
+  return {series,last:ym,run};
+}
+function runningCard(year){
+  const rs=runningSeries(), r=S.running||{};
+  const tone=v=>v<0?"var(--crit)":"var(--income)";
+  const word=v=>v<0?"to earn back":"buffer";
+  const setForm=`<details class="pastefold noprint" id="runSet"${rs?"":" open"}><summary>${rs?"Change the starting point":"Set where it starts"}</summary>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+        <div class="field"><span class="lbl">Running total</span><input type="number" step="0.01" id="runOpen" value="${r.open!=null?esc(String(r.open)):""}" placeholder="e.g. 7984.62" style="width:150px"></div>
+        <div class="field"><span class="lbl">At the end of</span><input type="month" id="runAsOf" value="${esc(r.asOf||"")}" style="width:170px"></div>
+        <button class="btn sm pri" id="runSave" style="margin-bottom:4px">Save</button>
+      </div></details>`;
+  if(!rs) return `<div class="card runcard" style="margin-bottom:18px"><div class="body">
+      <span class="lbl">Running total</span>
+      <p class="hint" style="margin:6px 0 10px">Enter the total at the end of the last month your sheets cover; it carries on from there.</p>${setForm}</div></div>`;
+  const cells=MONTHS.map((_,i)=>{ const ym=year+"-"+String(i+1).padStart(2,"0"); return {ym,v:rs.series[ym]}; });
+  const fmt=v=>`<span style="color:${tone(v)}">${v<0?"−":"+"}$${Math.abs(v).toLocaleString("en-AU",{maximumFractionDigits:0})}</span>`;
+  return `<div class="card runcard" style="margin-bottom:18px"><div class="body" style="display:flex;flex-direction:column;gap:12px">
+    <div style="display:flex;align-items:flex-end;gap:18px;flex-wrap:wrap">
+      <div><span class="lbl">Running total</span>
+        <div class="v mono" style="font-size:28px;font-weight:600;margin-top:2px">${fmt(rs.run)}</div>
+        <div class="hint" style="margin-top:2px">${word(rs.run)} · end of ${ymLabel(rs.last)}</div></div>
+      <div class="spacer" style="flex:1"></div>${setForm}
+    </div>
+    <div class="tablewrap"><table class="grid"><thead><tr><th style="min-width:150px"></th>${MONTHS.map(m=>`<th class="r">${m}</th>`).join("")}</tr></thead><tbody>
+      <tr><td>Month result</td>${cells.map(c=>`<td class="r mono">${c.v&&c.v.month!=null?fmt(c.v.month):"·"}</td>`).join("")}</tr>
+      <tr><td><b>Running total</b></td>${cells.map(c=>`<td class="r mono" style="font-weight:600">${c.v?fmt(c.v.run):"·"}</td>`).join("")}</tr>
+    </tbody></table></div>
+  </div></div>`;
+}
+function wireRunning(){
+  const b=$("#runSave"); if(!b) return;
+  b.addEventListener("click",()=>{
+    const open=parseFloat($("#runOpen").value), asOf=$("#runAsOf").value;
+    if(!isFinite(open)||!/^\d{4}-\d{2}$/.test(asOf)){ toast("Enter an amount and a month"); return; }
+    S.running={open:Math.round(open*100)/100,asOf}; markDirty(); renderReport();
+    toast(`Running total starts at ${fmtAUD0(open)}, end of ${ymLabel(asOf)}`);
+  });
+}
 function renderSheetsReport(){
   const year=S.gridYear;
   const years=[...new Set(B().tx.map(t=>+t.date.slice(0,4)))].sort();
@@ -3979,9 +4051,11 @@ function renderSheetsReport(){
       ${norate?`<div class="flagbox crit"><div><div class="ft">${norate} row${norate===1?"":"s"} could not be converted</div><div class="fd">No published rate for that currency and date.</div></div></div>`:""}
       ${stale?`<div class="flagbox warn"><div><div class="ft">${stale} row${stale===1?"":"s"} past the end of the rate table</div><div class="fd">Converted at ${RATES.end}, the last published rate. Ask Claude to refresh the rates.</div></div></div>`:""}
     </div>`:""}
+    ${runningCard(year)}
     ${blocks}
     ${hiddenTotal?`<p class="hint" style="margin-top:14px">${hiddenTotal} line${hiddenTotal===1?"":"s"} with nothing against ${year} ${hiddenTotal===1?"is":"are"} hidden. A copied block still includes them.</p>`:""}
     <div id="copyPanel" class="noprint"></div>`;
+  wireRunning();
   $("#gridYear").addEventListener("change",e=>{S.gridYear=+e.target.value;markDirty();renderReport();});
   $("#hideEmpty").addEventListener("change",e=>{hideEmpty=e.target.checked;renderReport();});
   $("#dlActuals").addEventListener("click",()=>download(`monthly-actuals-${year}.csv`,actualsCsv(year)));
