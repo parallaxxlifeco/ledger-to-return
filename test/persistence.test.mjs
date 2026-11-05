@@ -22,7 +22,7 @@ for (let i = 0; i < 300; i++) {
   rows.push(`${d},MERCHANT ${i % 17} SOME PLACE,${i % 3 === 0 ? '' : '-'}${(50 + i * 3.7).toFixed(2)},${['AUD','IDR','USD'][i % 3]}`);
 }
 await p.fill('#impAcct', 'Bulk test');
-await p.fill('#impText', 'Date,Description,Amount,Currency\n' + rows.join('\n'));
+await p.evaluate(() => { const d = document.querySelector('#pasteFold'); if (d) d.open = true; }); await p.fill('#impText', 'Date,Description,Amount,Currency\n' + rows.join('\n'));
 await p.click('#btnParse');
 await p.waitForTimeout(500);
 await p.click('#btnAdd');

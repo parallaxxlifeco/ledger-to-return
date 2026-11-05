@@ -4,6 +4,18 @@ What was built, when, and what you'd need to know to change it. Newest first.
 
 ---
 
+## 2026-11-05 — Explanations folded away
+
+"Clean up unnecessary elements… explanations of how it works… can be folded into its own little tab."
+
+- **Import:** just the account name, currency, **Choose files…**, what's loaded, and one line on where it's saved. The paste box is behind **Paste rows instead**. Tracker lines, the Drive client ID and "How the conversion works" are in a closed **Settings & notes** fold at the bottom.
+- **Report:** only flags that need doing or deciding stay (unsorted, no rate, rates past the table, refunds, meals/FBT, capital items). Dropped: auto-filled count, carried-forward rates, rows outside the year. The Stripe and schedule explainer sentences are gone. **How the figures were reached** is a closed fold that opens itself for Print / save as PDF (`beforeprint`), so the accountant still gets it.
+- **Sheet actuals:** the two explainer lines are gone; the copy hint is the month button's tooltip.
+- **Sort:** the split hint is the Split button's tooltip.
+- Tests that paste rows open the fold first (`#pasteFold`).
+
+---
+
 ## 2026-11-05 — Refunds come off the charge they reverse
 
 - **Why:** money back from a merchant could only be filed as Transfer, so the purchase stayed claimed in full (FY 2025-26: Trip.com $556.94, Adobe $50.15, Yonder Media $18.54).

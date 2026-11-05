@@ -54,7 +54,7 @@ console.log('  progress:', await p.textContent('#progTxt'));
 // A fresh import must be filled by the migrated rule.
 await p.click('.stage[data-pane="import"]');
 await p.fill('#impAcct', 'Wise');
-await p.fill('#impText', 'Date,Description,Amount\n05/09/2026,ADOBE CC,-89.99');
+await p.evaluate(() => { const d = document.querySelector('#pasteFold'); if (d) d.open = true; }); await p.fill('#impText', 'Date,Description,Amount\n05/09/2026,ADOBE CC,-89.99');
 await p.click('#btnParse'); await p.waitForTimeout(280);
 await p.click('#btnAdd'); await p.waitForTimeout(600);
 console.log('  migrated rule fills a new row:', await p.evaluate(() => {

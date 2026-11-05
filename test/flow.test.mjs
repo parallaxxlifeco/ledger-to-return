@@ -46,7 +46,7 @@ console.log('FX:', JSON.stringify(await p.evaluate(() => ({
 // Indonesian headers, semicolons, debit/credit columns, dot thousands.
 await p.fill('#impAcct', 'BCA IDR');
 await p.selectOption('#impCur', 'IDR');
-await p.fill('#impText', `Tanggal;Keterangan;Debet;Kredit;Mata Uang
+await p.evaluate(() => { const d = document.querySelector('#pasteFold'); if (d) d.open = true; }); await p.fill('#impText', `Tanggal;Keterangan;Debet;Kredit;Mata Uang
 01/07/2026;PEMBAYARAN KLIEN COACHING;;65.000.000;IDR
 15/07/2026;SEWA VILLA CANGGU;25.000.000;;IDR
 04/08/2026;WARUNG BELANJA;450.000;;IDR`);
@@ -60,7 +60,7 @@ await p.click('#btnAdd'); await p.waitForTimeout(400);
 // A plain AUD statement, including one row outside the financial year.
 await p.click('.stage[data-pane="import"]');
 await p.fill('#impAcct', 'CommBank'); await p.selectOption('#impCur', 'AUD');
-await p.fill('#impText', `Date,Description,Amount
+await p.evaluate(() => { const d = document.querySelector('#pasteFold'); if (d) d.open = true; }); await p.fill('#impText', `Date,Description,Amount
 09/07/2026,ADOBE CREATIVE CLOUD,-89.99
 02/08/2026,TRANSFER TO SAVINGS,-2000.00
 20/08/2026,ADOBE CREATIVE CLOUD,-89.99

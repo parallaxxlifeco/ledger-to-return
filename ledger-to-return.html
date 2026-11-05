@@ -133,6 +133,17 @@ textarea{resize:vertical;font-family:"IBM Plex Mono",monospace;font-size:12px;li
 /* ---------- panels ---------- */
 .wrap{max-width:1240px;margin:0 auto;padding:26px 20px 90px}
 .card{background:var(--surface);border:1px solid var(--line);border-radius:10px}
+/* Settings and notes live folded away — there when needed, out of the way of the work. */
+details.fold>summary{cursor:pointer;list-style:none;padding:13px 18px;font-size:13px;font-weight:600;color:var(--ink2);display:flex;align-items:center;gap:8px}
+details.fold>summary::-webkit-details-marker{display:none}
+details.fold>summary::before{content:"▸";font-size:11px;color:var(--ink3);transition:transform .15s}
+details.fold[open]>summary::before{transform:rotate(90deg)}
+details.fold>summary:hover{color:var(--ink)}
+details.fold>.foldbody{padding:0 18px 18px;display:flex;flex-direction:column;gap:16px}
+details.fold .card{border-color:var(--linesoft)}
+details.pastefold>summary{cursor:pointer;font-size:12.5px;color:var(--accent);list-style:none;width:max-content}
+details.pastefold>summary::-webkit-details-marker{display:none}
+details.pastefold[open]>summary{margin-bottom:8px}
 .card>header{padding:15px 18px;border-bottom:1px solid var(--linesoft);display:flex;align-items:center;gap:12px}
 .card>header h2{font-size:14.5px}
 .card>.body{padding:18px}
@@ -552,34 +563,27 @@ table.inner td,table.inner th{font-size:12px;padding:5px 8px}
   <div class="wrap" style="display:flex;flex-direction:column;gap:18px">
 
     <div class="card">
-      <header><span class="stepno">1</span><h2>Bring in a statement</h2>
-        <div class="spacer"></div>
-        <span class="hint">CSV or tab-separated. One statement at a time — they stack up.</span>
-      </header>
+      <header><span class="stepno">1</span><h2>Bring in a statement</h2></header>
       <div class="body" style="display:flex;flex-direction:column;gap:14px">
         <div class="grid2">
           <div class="field">
             <span class="lbl">Account name</span>
             <input type="text" id="impAcct" placeholder="e.g. Wise IDR, ANZ Business">
-            <span class="hint">Labels every row so you can tell statements apart later.</span>
           </div>
           <div class="field">
             <span class="lbl">Currency</span>
             <select id="impCur"></select>
-            <span class="hint">Or pick a currency column below if the file mixes them.</span>
           </div>
         </div>
-        <div class="field">
-          <span class="lbl">Paste the rows</span>
+        <details class="pastefold" id="pasteFold"><summary>Paste rows instead</summary>
           <textarea id="impText" rows="7" placeholder="Paste straight from the CSV, or from a spreadsheet — headers and all."></textarea>
-        </div>
+        </details>
         <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
           <input type="file" id="impFile" accept=".csv,.txt,.tsv,.pdf" multiple style="display:none">
-          <button class="btn" id="btnFile">Choose a file…</button>
-          <button class="btn pri" id="btnParse">Read the rows</button>
+          <button class="btn pri" id="btnFile" title="CSV from Wise or Stripe, or CommBank PDF statements — several at once is fine">Choose files…</button>
+          <button class="btn" id="btnParse">Read the rows</button>
           <span class="hint" id="impStatus"></span>
         </div>
-        <p class="hint" style="margin-top:9px">CSV, or CommBank credit card statements as PDF — several months at once is fine. Each statement is checked against its own printed totals before anything is added.</p>
         <div id="pdfNote" style="display:none;margin-top:12px"></div>
       </div>
     </div>
@@ -629,17 +633,15 @@ table.inner td,table.inner th{font-size:12px;padding:5px 8px}
     </div>
 
     <div class="card" id="storageCard" style="display:none">
-      <header><h2>Where your work is saved</h2>
-        <div class="spacer"></div>
-        <span class="hint">Every change is kept in this browser first, then pushed to Drive.</span>
-      </header>
+      <header><h2>Where your work is saved</h2></header>
       <div class="body" id="storageBody"></div>
     </div>
+
+    <details class="card fold" id="settingsFold"><summary>Settings &amp; notes</summary><div class="foldbody">
 
     <div class="card" id="tracksCard" style="display:none">
       <header><h2>Tracker lines</h2>
         <div class="spacer"></div>
-        <span class="hint">The rows in your two sheets. Edit them as the sheets change.</span>
         <button class="btn sm" id="btnAddLine">Add a line</button>
         <button class="btn sm" id="btnResetLines">Reset to sheets</button>
       </header>
@@ -660,6 +662,13 @@ table.inner td,table.inner th{font-size:12px;padding:5px 8px}
         </p>
       </div>
     </div>
+
+    <div class="card" id="cidCard" style="display:none">
+      <header><h2>Google Drive set-up</h2></header>
+      <div class="body" id="cidBody"></div>
+    </div>
+
+    </div></details>
   </div>
 </section>
 
@@ -2010,6 +2019,9 @@ async function persist(){
   try{ await Store.save(S); dirty=false; renderStorage(); }
   catch(e){ console.warn("save failed",e); renderStorage("saved here only",true); }
 }
+/* The folded notes are part of what the accountant gets: open them for print. */
+window.addEventListener("beforeprint",()=>$$(".notesfold").forEach(d=>{ if(!d.open){ d.open=true; d.dataset.reclose="1"; } }));
+window.addEventListener("afterprint",()=>$$(".notesfold[data-reclose]").forEach(d=>{ d.open=false; delete d.dataset.reclose; }));
 async function boot(){
   let local=null;
   try{ local=migrate(JSON.parse(localStorage.getItem(LSKEY))); }catch(e){}
@@ -2577,32 +2589,23 @@ function renderStorage(override,warn){
   if(inArtifact) return;
   const cid=clientId();
   const connected=Store&&Store.mode==="drive";
+  /* One line and the buttons. The client ID is set once, so it lives in
+     Settings & notes. */
   $("#storageBody").innerHTML=`
-    <div class="grid2" style="align-items:start">
-      <div style="display:flex;flex-direction:column;gap:10px">
-        <div class="flagbox ${connected?"ok":"warn"}" style="align-items:center">
-          <div>
-            <div class="ft">${connected?"Connected to Google Drive":cid?"Not connected":"Google Drive not set up yet"}</div>
-            <div class="fd">${connected
-              ? `Saving to <span class="mono">${esc(DRIVE_FILE)}</span> in your Drive as you work. It syncs to every device you sign in from, and Drive keeps its own version history.`
-              : cid
-              ? `Your work is saved in this browser only. Connect Drive and it follows you everywhere and gets backed up.`
-              : `Paste the client ID from your Google Cloud project to enable Drive saving. Until then your work stays in this browser.`}</div>
-          </div>
-        </div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap">
-          ${connected
-            ? `<button class="btn" id="btnSnapshot">Save a dated snapshot</button>
-               <button class="btn" id="btnDisconnect">Disconnect</button>`
-            : `<button class="btn pri" id="btnConnect"${cid?"":" disabled"}>Connect Google Drive</button>`}
-          <button class="btn" id="btnBackup2">Download a backup file</button>
-        </div>
-      </div>
-      <div class="field">
-        <span class="lbl">Google OAuth client ID</span>
-        <input type="text" id="cidInput" value="${esc(cid)}" placeholder="1234-abc.apps.googleusercontent.com" spellcheck="false">
-        <span class="hint">Not a secret — it only works from the site it is registered to. Setup steps are in the project README.</span>
-      </div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+      <span class="flagbox ${connected?"ok":"warn"}" style="padding:7px 12px;align-items:center"><span class="ft" style="margin:0">${
+        connected?"Saving to Google Drive":cid?"Not connected — saved in this browser only":"Drive not set up — saved in this browser only"}</span></span>
+      <div class="spacer" style="flex:1"></div>
+      ${connected
+        ? `<button class="btn" id="btnSnapshot">Save a dated snapshot</button>
+           <button class="btn" id="btnDisconnect">Disconnect</button>`
+        : `<button class="btn pri" id="btnConnect"${cid?"":" disabled"}>Connect Google Drive</button>`}
+      <button class="btn" id="btnBackup2">Download a backup file</button>
+    </div>`;
+  $("#cidCard").style.display="";
+  $("#cidBody").innerHTML=`<div class="field" style="max-width:560px">
+      <span class="lbl">Google OAuth client ID</span>
+      <input type="text" id="cidInput" value="${esc(cid)}" placeholder="1234-abc.apps.googleusercontent.com" spellcheck="false">
     </div>`;
   const cidInput=$("#cidInput");
   cidInput.addEventListener("change",()=>{
@@ -3091,8 +3094,8 @@ function splitBlock(t){
       <button class="btn sm" data-split-join="${esc(t.split.of)}" title="Put the ${sibs.length} parts back together as one transaction">Join back</button></div>`;
   }
   if(splitOpen!==t.id)
-    return `<div class="splitrow"><button class="btn sm" data-split-open="1" title="Split into two parts — each gets its own answer">Split…</button>
-      <span class="hint" style="margin:0">shared with your partner, or part business</span></div>`;
+    return `<div class="splitrow"><button class="btn sm" data-split-open="1" title="Split into two parts — shared with your partner, or part business. Each part gets its own answer.">Split…</button>
+</div>`;
   const [a,b]=splitAmounts(t.amt,50,t.cur);
   return `<div class="splitrow open">
     <button class="btn sm pri" data-split-go="50">50 / 50</button>
@@ -3819,7 +3822,7 @@ function gridTable(sheetId,year){
   const d=gridData(sheetId,year);
   let hidden=0;
   const head=`<thead><tr><th style="min-width:190px">Line</th>${
-    MONTHS.map((m,i)=>`<th class="r"><button class="monthbtn" data-sheet="${sheetId}" data-m="${i}" title="Copy this month's column">${m}</button></th>`).join("")
+    MONTHS.map((m,i)=>`<th class="r"><button class="monthbtn" data-sheet="${sheetId}" data-m="${i}" title="Copy this month — every line in the block, empty ones included, so it lines up with your sheet">${m}</button></th>`).join("")
   }<th class="r">Year</th></tr></thead>`;
   const body=d.groups.map(g=>{
     const shown=hideEmpty?g.items.filter(it=>it.months.some(v=>v)):g.items;
@@ -3947,7 +3950,7 @@ function renderSheetsReport(){
     hiddenTotal+=hidden;
     return `<div class="sechead"><h2>${esc(sh.name)}</h2><div class="rule"></div>
         <button class="btn sm noprint" data-csv="${sh.id}">Download CSV</button></div>
-      <p class="hint" style="margin:-4px 0 12px;max-width:70ch">Click a month to copy that column, one block at a time — a copied run always covers every line in the block, empty ones included, so it lines up with your sheet.</p>
+
       ${html}
       ${d.otherYear?`<p class="hint" style="margin-top:8px">${d.otherYear} transaction${d.otherYear===1?"":"s"} on these lines fall outside ${year}.</p>`:""}`;
   }).join("");
@@ -3960,7 +3963,7 @@ function renderSheetsReport(){
       <div>
         <span class="lbl">Monthly actuals for your sheets</span>
         <h1 style="font-size:24px;margin-top:4px">${year} by month</h1>
-        <p class="hint" style="margin-top:5px">Every figure in Australian dollars, expenses as positive numbers to match your sheets.</p>
+
       </div>
       <div class="noprint" style="display:flex;gap:8px;align-items:flex-end">
         <div class="field"><span class="lbl">Year</span>
@@ -4035,12 +4038,15 @@ function renderTaxReport(){
   }
   if(d.norate.length) flags.push(["crit",`${d.norate.length} row${d.norate.length===1?"":"s"} could not be converted`,`No published rate for that currency and date. They are excluded from the totals.`]);
   if(d.stale.length) flags.push(["warn",`${d.stale.length} row${d.stale.length===1?"":"s"} past the end of the rate table`,`Converted at ${RATES.end}, the last published rate. Ask Claude to refresh the rates and these will settle.`]);
-  if(d.autos.length) flags.push(["warn",`${d.autos.length} filled in automatically`,`Matched a description you sorted before. Worth a skim in the Sort tab under “Auto-filled”.`]);
+  /* Only what needs doing or deciding is flagged. Auto-filled counts, carried
+     rates and rows outside the year were notes, not problems — the carried
+     rates are still described under "How the figures were reached". */
+  if(false&&d.autos.length) flags.push(["warn",`${d.autos.length} filled in automatically`,`Matched a description you sorted before. Worth a skim in the Sort tab under “Auto-filled”.`]);
   if(d.ent&&d.ent.n) flags.push(["warn",`${fmtAUD(Math.abs(d.ent.aud))} in meals and entertainment`,`Entertainment is often not deductible and can attract FBT. Flagged here so your accountant makes the call.`]);
   if(d.miscap.length) flags.push(["warn",`${d.miscap.length} item${d.miscap.length===1?"":"s"} filed under $300 but cost more`,`Filed as “Equipment & tools under $300” yet worth $300 or more once converted. Move them, or tell your accountant.`]);
   if(d.cap.length) flags.push(["warn",`${d.cap.length} item${d.cap.length===1?"":"s"} at $300 or more`,`These are capital purchases — they belong in the asset register and get depreciated, not claimed outright.`]);
-  if(d.carried.length) flags.push(["warn",`${d.carried.length} row${d.carried.length===1?"":"s"} used a carried-forward rate`,`Weekend or public holiday — no rate is published, so the last one before it was used. Listed in the export.`]);
-  if(d.outFYr.length) flags.push(["warn",`${d.outFYr.length} transaction${d.outFYr.length===1?"":"s"} outside ${d.fy.label}`,`Dated outside ${niceDate(d.fy.start)} to ${niceDate(d.fy.end)}, so they sit outside every total here.`]);
+  if(false&&d.carried.length) flags.push(["warn",`${d.carried.length} row${d.carried.length===1?"":"s"} used a carried-forward rate`,`Weekend or public holiday — no rate is published, so the last one before it was used. Listed in the export.`]);
+  if(false&&d.outFYr.length) flags.push(["warn",`${d.outFYr.length} transaction${d.outFYr.length===1?"":"s"} outside ${d.fy.label}`,`Dated outside ${niceDate(d.fy.start)} to ${niceDate(d.fy.end)}, so they sit outside every total here.`]);
   if(!flags.length&&bk.tx.length) flags.push(["ok","Everything is sorted and converted","Ready to hand over."]);
 
   const atoRows=Object.values(d.ato).sort((a,b)=>a.kind===b.kind?Math.abs(b.aud)-Math.abs(a.aud):(a.kind==="income"?-1:1))
@@ -4123,7 +4129,6 @@ function renderTaxReport(){
     ${catTable(d.income,"+")}
     ${d.byCat.x_income_reported&&d.byCat.x_income_reported.n?`
     <h3 style="margin:18px 0 6px;font-size:13px">Stripe sales — kept separate</h3>
-    <p class="hint" style="margin:0 0 8px;max-width:78ch">Counted in business income and net at the top of this report, for your own figures. Not in the Total above, the schedule roll-up, or the totals in the Summary CSV, which lists them on a line of their own.</p>
     ${catTable([d.byCat.x_income_reported],"+")}`:""}
     ${d.refunds?`<p class="hint" style="margin-top:8px">Plus ${d.refunds.n} refund${d.refunds.n===1?"":"s"} totalling ${fmtAUD(Math.abs(d.refunds.aud))}, which reduce expenses rather than adding to income.</p>`:""}
 
@@ -4131,7 +4136,6 @@ function renderTaxReport(){
     ${catTable(d.expense,"-")}
 
     <div class="sechead"><h2>Rolled up to the business schedule</h2><div class="rule"></div></div>
-    <p class="hint" style="margin:-4px 0 12px;max-width:66ch">The same totals grouped under the labels that appear on the ATO business and professional items schedule, so they can be transferred straight across.</p>
     <div class="tablewrap"><table><thead><tr><th>Schedule label</th><th></th><th class="r">Items</th><th class="r">AUD</th></tr></thead><tbody>${atoRows||`<tr><td colspan="4" class="hint">Nothing sorted yet.</td></tr>`}</tbody></table></div>
 
     ${capRows}
@@ -4139,8 +4143,7 @@ function renderTaxReport(){
     <div class="sechead"><h2>Currency mix</h2><div class="rule"></div></div>
     <div class="tablewrap"><table><thead><tr><th>Currency</th><th class="r">Items</th><th class="r">Income (AUD)</th><th class="r">Expenses (AUD)</th></tr></thead><tbody>${curSplit||`<tr><td colspan="4" class="hint">Nothing sorted yet.</td></tr>`}</tbody></table></div>
 
-    <div class="sechead"><h2>How the figures were reached</h2><div class="rule"></div></div>
-    <div class="card"><div class="body">
+    <details class="card fold notesfold" style="margin-top:22px"><summary>How the figures were reached</summary><div class="foldbody">
       <p class="hint" style="max-width:78ch;font-size:12.5px;margin:0">
         Foreign-currency amounts were translated to Australian dollars at the exchange rate for the date of
         each transaction, in line with the general translation rule for income and deductions. Rates are
@@ -4151,7 +4154,7 @@ function renderTaxReport(){
         ${isTrack()?" Each transaction was marked personal or business first; business rows carry the tax category you chose, and the sheet line follows from it.":""}
         ${d.unsorted.length?`<b style="color:var(--crit)"> ${d.unsorted.length} transaction${d.unsorted.length===1?" is":"s are"} still unsorted and excluded from all totals.</b>`:""}
       </p>
-    </div></div>
+    </div></details>
     <p class="hint" style="margin-top:22px;font-size:11.5px">Generated ${new Date().toLocaleDateString("en-AU",{day:"numeric",month:"long",year:"numeric"})}. A working summary for your accountant, not tax advice.</p>
   `;
   if($("#fyPick")) $("#fyPick").addEventListener("change",e=>{S.taxFy=e.target.value;markDirty();renderReport();});
@@ -4268,7 +4271,7 @@ function renderTracks(){
     }
   }
   const rolls=TRACKS.filter(t=>t.rollsTo&&TRK[t.rollsTo]).length;
-  $("#tracksBody").innerHTML=html+`<p class="hint" style="margin-top:14px">${TRACKS.length} lines. ${rolls} also post to a line on the other sheet — the middle column — so one answer fills both grids. A line in use can't be removed; renaming one keeps everything coded to it.</p>`;
+  $("#tracksBody").innerHTML=html;
   $$("#tracksBody .lineedit").forEach(row=>{
     const key=row.dataset.k;
     row.querySelector('[data-f="label"]').addEventListener("change",e=>{

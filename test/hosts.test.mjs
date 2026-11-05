@@ -36,7 +36,7 @@ console.log(' storage card shown:', await p.isVisible('#storageCard'));
 console.log(' connect disabled without a client id:', await p.evaluate(() => !!document.querySelector('#btnConnect')?.disabled));
 console.log(' google script tag present:', await p.evaluate(() => !!document.querySelector('script[src*="accounts.google.com"]')));
 
-await p.fill('#impAcct','Wise'); await p.fill('#impText',CSV);
+await p.fill('#impAcct','Wise'); await p.evaluate(() => { const d = document.querySelector('#pasteFold'); if (d) d.open = true; }); await p.fill('#impText',CSV);
 await p.click('#btnParse'); await p.waitForTimeout(300);
 await p.click('#btnAdd'); await p.waitForTimeout(600);
 for(const [kind, cat, line] of [['b','event ticket','tickets'], ['b','venue hire','venue'], ['p','groceries', null]]){
@@ -61,7 +61,7 @@ p = await page('local-db.html');
 console.log(' storage mode:', await p.evaluate(() => Store.mode));
 console.log(' storage chip:', (await p.textContent('#saveFlag')).trim());
 console.log(' storage card hidden in the artifact:', !(await p.isVisible('#storageCard')));
-await p.fill('#impAcct','Wise'); await p.fill('#impText',CSV);
+await p.fill('#impAcct','Wise'); await p.evaluate(() => { const d = document.querySelector('#pasteFold'); if (d) d.open = true; }); await p.fill('#impText',CSV);
 await p.click('#btnParse'); await p.waitForTimeout(300);
 await p.click('#btnAdd'); await p.waitForTimeout(1800);
 console.log(' db docs written:', await p.evaluate(() => Object.keys(localStorage).filter(k=>k.startsWith('FAKEDB:')).sort()));

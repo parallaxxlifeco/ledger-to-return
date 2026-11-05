@@ -26,7 +26,7 @@ for(const scheme of ['light','dark']){
   const ctx=await b.newContext({colorScheme:scheme,viewport:{width:1200,height:1000},deviceScaleFactor:2});
   const p=await ctx.newPage();
   await p.goto(BASE+'/local.html'); await p.waitForTimeout(500);
-  await p.fill('#impAcct','Wise multi-currency'); await p.fill('#impText',csv);
+  await p.fill('#impAcct','Wise multi-currency'); await p.evaluate(() => { const d = document.querySelector('#pasteFold'); if (d) d.open = true; }); await p.fill('#impText',csv);
   await p.click('#btnParse'); await p.waitForTimeout(250); await p.click('#btnAdd'); await p.waitForTimeout(400);
   // untouched first card
   await p.screenshot({path:`screenshots/sort-fresh-${scheme}.png`});
