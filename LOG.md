@@ -4,6 +4,19 @@ What was built, when, and what you'd need to know to change it. Newest first.
 
 ---
 
+## 2026-11-05 — Bank interest
+
+"On the ATO sheet there is nothing for logging interest payment in?"
+
+- New category **Bank interest — on the return, not business** (`x_interest`, ATO: gross interest on the individual return). It sits in the "Not a business item" block (eight blocks is what the colour palette holds) with `ret:true`.
+- Offered for money in under **Personal** (next to "Not recorded") and under **Other**. On no sheet line, so not in the running total.
+- **Report → Tax view:** its own "Other income on the return — not business" table under Income; kept out of business income and the "Left out" card. **Summary CSV:** an "Other income on the return" line.
+- **Rules:** a rule saved now also updates rows an earlier rule for that merchant filled in (auto); rows answered by hand are never touched. So re-filing one "Credit Interest" with Make a rule ticked moves the auto-filled ones too.
+- His Saver's July 2026 statement says $26.29 interest for FY 2025–26.
+- Test: `test/interest.test.mjs`.
+
+---
+
 ## 2026-11-05 — Saver statements from August 2025 read again
 
 "How come I got this error when uploading these statements — some worked and others didn't?"

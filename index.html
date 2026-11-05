@@ -841,6 +841,11 @@ const CATS=[
   ["ex_int_os","Interest — overseas lenders","Interest expenses overseas"],
  ]},
  {g:"Not a business item",k:"exclude",items:[
+  /* Bank interest is income on his own return (gross interest), not business
+     income: reported on its own, outside the business totals, on neither
+     sheet. In this block rather than one of its own — eight blocks is what the
+     colour palette holds. */
+  ["x_interest","Bank interest — on the return, not business","Gross interest — individual return",{dir:"income",ret:true}],
   ["x_personal","Personal spending","—"],
   /* Money in on the personal side that belongs nowhere — a friend sending money,
      a gift, a repayment you don't want netted off a line. Off both sheets and
@@ -2864,7 +2869,7 @@ const KINDS=[
   {k:"exclude",  label:"Other",     key:"O", hint:"drawings, tax, GST, loan principal"},
 ];
 /* Transfers have their own button, so they are not in this list. */
-const EXCLUDE_CATS=["x_partner","x_drawings","x_tax","x_gst","x_loan","x_capital"];
+const EXCLUDE_CATS=["x_interest","x_partner","x_drawings","x_tax","x_gst","x_loan","x_capital"];
 const isTransfer=t=>isTrack()&&t.kind==="transfer";
 
 function visibleTx(){
@@ -2963,7 +2968,9 @@ function pickPool(t){
     const lines=(same.length?same:pool).map(l=>({key:l.key,label:l.label,g:l.group,note:"",hay:l.label+" "+l.group}));
     if(t.amt>=0&&CAT.x_personal_in) lines.unshift({key:"x_personal_in",label:"Not recorded",
       g:"PERSONAL MONEY IN",note:"off both sheets and the return",
-      hay:"not recorded personal money in gift friend income ignore skip"});
+      hay:"not recorded personal money in gift friend income ignore skip"},
+      {key:"x_interest",label:"Bank interest",g:"PERSONAL MONEY IN",note:"on the return as interest, not business",
+      hay:"bank interest credit interest savings earned"});
     /* The other half of a split shared cost is offered first. */
     if(t.amt<0&&t.split&&CAT.x_partner) lines.unshift({key:"x_partner",label:"Partner's share — not recorded",
       g:"SHARED COST",note:"off both sheets and the return",hay:"partner share shared split half not recorded"});
@@ -3081,7 +3088,7 @@ function pickPrompt(t){
      something coming back — say so, rather than leave it looking like a
      mistake. */
   if(t.kind==="personal") return t.amt>=0
-    ? "Money in — not recorded, or which spending line does it come off?"
+    ? "Money in — not recorded, bank interest, or which spending line does it come off?"
     : "Which line in your Budget Tracker?";
   if(t.kind==="exclude")  return "What is it?";
   return t.amt>=0?"Which kind of income?":"Which expense category, for the return?";
@@ -3662,7 +3669,7 @@ function choose(key){
     applyRule(t,{k:t.kind,l:t.line,t:t.tax});
     advance(nextId); return;
   }
-  if(t.kind==="personal"&&(key==="x_personal_in"||key==="x_partner")){
+  if(t.kind==="personal"&&(key==="x_personal_in"||key==="x_partner"||key==="x_interest")){
     t.kind="exclude"; t.tax=key; t.line=null; t.auto=false;
     applyRule(t,{k:"exclude",l:null,t:key});
     advance(nextId); return;
@@ -3717,8 +3724,11 @@ function applyRule(t,rule){
   if(ruleOn&&t.mk){
     B().rules[t.mk]=rule;
     const dir=ruleDir(rule);
+    /* Rows an earlier rule filled in (auto) follow the new one — the rule
+       changed, so what it did changes with it. Rows you answered yourself are
+       never touched. */
     for(const x of B().tx){
-      if(x.id===t.id||x.mk!==t.mk||settled(x)) continue;
+      if(x.id===t.id||x.mk!==t.mk||(settled(x)&&!x.auto)) continue;
       /* Leave the opposite direction alone rather than filling it in wrong —
          it comes back as something to answer, which is the honest outcome. */
       if(dir&&(x.amt>=0?"income":"expense")!==dir){ skipped++; continue; }
@@ -3954,7 +3964,7 @@ function taxRows(){ return B().tx.map(t=>({...enrich(t),taxCat:taxOf(t)})); }
 const LEFT_SHORT={x_personal:"personal",x_partner:"partner's share",x_drawings:"drawings",x_tax:"tax",
   x_gst:"GST",x_loan:"loan",x_personal_in:"personal in",x_capital:"owner funds in"};
 function leftOutStat(d){
-  const bs=d.excluded.filter(b=>b.cat.key!=="x_income_reported");
+  const bs=d.excluded.filter(b=>b.cat.key!=="x_income_reported"&&!b.cat.ret);
   const tr=bs.filter(b=>b.cat.key==="x_transfer"), rest=bs.filter(b=>b.cat.key!=="x_transfer");
   const n=bs.reduce((s,b)=>s+b.n,0), nTr=tr.reduce((s,b)=>s+b.n,0);
   let out=0, inn=0; const parts=[];
@@ -4443,6 +4453,9 @@ function renderTaxReport(){
     ${d.byCat.x_income_reported&&d.byCat.x_income_reported.n?`
     <h3 style="margin:18px 0 6px;font-size:13px">Stripe sales — kept separate</h3>
     ${catTable([d.byCat.x_income_reported],"+")}`:""}
+    ${d.byCat.x_interest&&d.byCat.x_interest.n?`
+    <h3 style="margin:18px 0 6px;font-size:13px">Other income on the return — not business</h3>
+    ${catTable([d.byCat.x_interest],"+")}`:""}
     ${d.refunds?`<p class="hint" style="margin-top:8px">Plus ${d.refunds.n} refund${d.refunds.n===1?"":"s"} totalling ${fmtAUD(Math.abs(d.refunds.aud))}, which reduce expenses rather than adding to income.</p>`:""}
 
     <div class="sechead"><h2>Expenses</h2><div class="rule"></div></div>
@@ -4528,6 +4541,12 @@ function summaryCsv(){
     L.push(["Kept separate","Stripe sales — not in the totals above","",sr.n,sr.aud.toFixed(2)].map(csvq).join(","));
     L.push(["Kept separate","Business income including Stripe","","",(d.totalIncome+sr.aud).toFixed(2)].map(csvq).join(","));
     L.push(["Kept separate","Net before tax including Stripe","","",(d.totalIncome-d.totalExpense+sr.aud).toFixed(2)].map(csvq).join(","));
+  }
+  /* Income for his own return that isn't business income. */
+  const oi=d.excluded.filter(b=>b.cat.ret&&b.n);
+  if(oi.length){
+    L.push([]);
+    for(const b of oi) L.push(["Other income on the return",b.cat.label,b.cat.ato,b.n,b.aud.toFixed(2)].map(csvq).join(","));
   }
   L.push([]);
   L.push(["ATO schedule roll-up","Type","","Items","AUD"].map(csvq).join(","));
