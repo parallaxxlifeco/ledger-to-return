@@ -4217,67 +4217,86 @@ function renderReport(){
    in on an income line and money out on an expense line, refunds included.
    Rows on no line — transfers, partner's shares, personal money in, Stripe
    fees — are not counted, the same as on his sheets. */
-function monthResults(){
+/* Money in and out per month, across both sheets: every sorted row on a sheet
+   line. In is what landed on income lines; out is what went on expense lines,
+   less any refunds on them. The month's result is the difference. */
+function monthTotals(){
   const m={};
   for(const t of B().tx){
     const k=lineOf(t);
     if(!k||!TRK[k]||!settled(t)) continue;
     const e=enrich(t); if(e.aud==null) continue;
-    const ym=t.date.slice(0,7); m[ym]=(m[ym]||0)+e.aud;
+    const ym=t.date.slice(0,7), c=m[ym]||(m[ym]={in:0,out:0,net:0});
+    if(TRK[k].kind==="income") c.in+=e.aud; else c.out-=e.aud;
+    c.net+=e.aud;
   }
   return m;
 }
+function monthResults(){ const m={}, t=monthTotals(); for(const k in t) m[k]=t[k].net; return m; }
 const ymAdd=(ym,n)=>{ let [y,mo]=ym.split("-").map(Number); mo+=n;
   while(mo>12){mo-=12;y++;} while(mo<1){mo+=12;y--;} return y+"-"+String(mo).padStart(2,"0"); };
 const ymLabel=ym=>MONTHS[+ym.slice(5,7)-1]+" "+ym.slice(0,4);
+/* Anchored on the figure he sets (the total at the end of one month), then
+   carried forward month by month to the latest data — and back, to the first
+   month loaded here, by taking each month's result off again. */
 function runningSeries(){
   const r=S.running; if(!r||!/^\d{4}-\d{2}$/.test(r.asOf||"")||!isFinite(+r.open)) return null;
   const res=monthResults();
-  const last=B().tx.reduce((a,t)=>t.date>a?t.date:a,"").slice(0,7);
-  const series={[r.asOf]:{month:null,run:+r.open}};
+  const dates=B().tx.map(t=>t.date).sort();
+  const first=dates.length?dates[0].slice(0,7):r.asOf, last=dates.length?dates[dates.length-1].slice(0,7):r.asOf;
+  const series={[r.asOf]:{month:res[r.asOf]||0,run:+r.open}};
   let ym=r.asOf, run=+r.open;
-  while(last&&ym<last){ ym=ymAdd(ym,1); const m=res[ym]||0; run+=m; series[ym]={month:m,run}; }
-  return {series,last:ym,run};
+  while(ym<last){ ym=ymAdd(ym,1); const m=res[ym]||0; run+=m; series[ym]={month:m,run}; }
+  const lastYm=ym, now=run;
+  ym=r.asOf; run=+r.open;
+  while(ym>first){ run-=res[ym]||0; ym=ymAdd(ym,-1); series[ym]={month:res[ym]||0,run}; }
+  delete series[first].month; series[first].month=res[first]||0;
+  return {series,last:lastYm,run:now,first};
 }
 /* The month's move in the running total, as a percentage of where it stood the
    month before. Measured against the size of that total, so a smaller shortfall
    reads as a rise and a bigger one as a fall, whichever side of zero it is on.
-   Nothing to compare against at the start, or from exactly zero. */
+   Nothing to compare against in the first month, or from exactly zero. */
 function runChange(rs,ym){
   const cur=rs.series[ym], prev=rs.series[ymAdd(ym,-1)];
   if(!cur||!prev||cur.month==null||Math.abs(prev.run)<0.005) return null;
   return (cur.run-prev.run)/Math.abs(prev.run)*100;
 }
+/* The summary at the top of Sheet actuals: the year month by month — money in,
+   money out, the result — then the running total and how it moved. */
 function runningCard(year){
-  const rs=runningSeries(), r=S.running||{};
+  const rs=runningSeries(), r=S.running||{}, tot=monthTotals();
   const tone=v=>v<0?"var(--crit)":"var(--income)";
   const word=v=>v<0?"to earn back":"buffer";
-  const setForm=`<details class="pastefold noprint" id="runSet"${rs?"":" open"}><summary>${rs?"Change the starting point":"Set where it starts"}</summary>
+  const setForm=`<details class="pastefold noprint" id="runSet"${rs?"":" open"}><summary>${rs?"Change the starting point":"Set where the running total starts"}</summary>
       <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
         <div class="field"><span class="lbl">Running total</span><input type="number" step="0.01" id="runOpen" value="${r.open!=null?esc(String(r.open)):""}" placeholder="e.g. 7984.62" style="width:150px"></div>
         <div class="field"><span class="lbl">At the end of</span><input type="month" id="runAsOf" value="${esc(r.asOf||"")}" style="width:170px"></div>
         <button class="btn sm pri" id="runSave" style="margin-bottom:4px">Save</button>
       </div></details>`;
-  if(!rs) return `<div class="card runcard" style="margin-bottom:18px"><div class="body">
-      <span class="lbl">Running total</span>
-      <p class="hint" style="margin:6px 0 10px">Enter the total at the end of the last month your sheets cover; it carries on from there.</p>${setForm}</div></div>`;
-  const cells=MONTHS.map((_,i)=>{ const ym=year+"-"+String(i+1).padStart(2,"0"); return {ym,v:rs.series[ym]}; });
-  const fmt=v=>`<span style="color:${tone(v)}">${v<0?"−":"+"}$${Math.abs(v).toLocaleString("en-AU",{maximumFractionDigits:0})}</span>`;
-  return `<div class="card runcard" style="margin-bottom:18px"><div class="body" style="display:flex;flex-direction:column;gap:12px">
-    <div style="display:flex;align-items:flex-end;gap:18px;flex-wrap:wrap">
-      <div><span class="lbl">Running total</span>
+  const cells=MONTHS.map((_,i)=>{ const ym=year+"-"+String(i+1).padStart(2,"0"); return {ym,t:tot[ym],v:rs&&rs.series[ym]}; });
+  const money=v=>`$${Math.abs(v).toLocaleString("en-AU",{maximumFractionDigits:0})}`;
+  const fmt=v=>`<span style="color:${tone(v)}">${v<0?"−":"+"}${money(v)}</span>`;
+  const sum=f=>cells.reduce((a,c)=>a+(c.t?c.t[f]:0),0);
+  const has=cells.some(c=>c.t);
+  const row=(label,cellFn,year,cls)=>`<tr${cls?` class="${cls}"`:""}><td>${label}</td>${cells.map(cellFn).join("")}<td class="r mono" style="font-weight:600">${year}</td></tr>`;
+  const head=rs?`<div><span class="lbl">Running total</span>
         <div class="v mono" style="font-size:28px;font-weight:600;margin-top:2px">${fmt(rs.run)}</div>
-        <div class="hint" style="margin-top:2px">${word(rs.run)} · end of ${ymLabel(rs.last)}</div></div>
-      <div class="spacer" style="flex:1"></div>${setForm}
-    </div>
-    <div class="tablewrap"><table class="grid"><thead><tr><th style="min-width:150px"></th>${MONTHS.map(m=>`<th class="r">${m}</th>`).join("")}</tr></thead><tbody>
-      <tr><td>Month result</td>${cells.map(c=>`<td class="r mono">${c.v&&c.v.month!=null?fmt(c.v.month):"·"}</td>`).join("")}</tr>
-      <tr><td><b>Running total</b></td>${cells.map(c=>`<td class="r mono" style="font-weight:600">${c.v?fmt(c.v.run):"·"}</td>`).join("")}</tr>
-      <tr><td class="hint" title="How much the running total moved against the month before, as a share of where it stood">vs last month</td>${cells.map(c=>{
+        <div class="hint" style="margin-top:2px">${word(rs.run)} · end of ${ymLabel(rs.last)}</div></div>`
+    :`<div><span class="lbl">${year} summary</span></div>`;
+  return `<div class="card runcard" style="margin-bottom:18px"><div class="body" style="display:flex;flex-direction:column;gap:12px">
+    <div style="display:flex;align-items:flex-end;gap:18px;flex-wrap:wrap">${head}<div class="spacer" style="flex:1"></div>${setForm}</div>
+    ${has?`<div class="tablewrap"><table class="grid"><thead><tr><th style="min-width:150px"></th>${MONTHS.map(m=>`<th class="r">${m}</th>`).join("")}<th class="r">Year</th></tr></thead><tbody>
+      ${row("Money in",c=>`<td class="r mono">${c.t?money(c.t.in):"·"}</td>`,money(sum("in")))}
+      ${row("Money out",c=>`<td class="r mono">${c.t?money(c.t.out):"·"}</td>`,money(sum("out")))}
+      ${row("<b>Month result</b>",c=>`<td class="r mono" style="font-weight:600">${c.t?fmt(c.t.net):"·"}</td>`,fmt(sum("net")))}
+      ${rs?row("<b>Running total</b>",c=>`<td class="r mono" style="font-weight:600">${c.v?fmt(c.v.run):"·"}</td>`,"")
+        :`<tr><td><b>Running total</b></td><td colspan="13" class="hint">Set where it starts, above, and it fills in here.</td></tr>`}
+      ${rs?row(`<span class="hint" title="How much the running total moved against the month before, as a share of where it stood">vs last month</span>`,c=>{
         const p=runChange(rs,c.ym);
         return `<td class="r mono" style="font-size:11px">${p==null?"·":Math.abs(p)<0.05?`<span class="hint">0%</span>`:`<span style="color:${tone(p)}">${p<0?"▼":"▲"} ${Math.abs(p)>=1000?"999+":Math.abs(p).toFixed(Math.abs(p)<10?1:0)}%</span>`}</td>`;
-      }).join("")}</tr>
-    </tbody></table></div>
+      },""):""}
+    </tbody></table></div>`:`<p class="hint" style="margin:0">Nothing sorted for ${year} yet.</p>`}
   </div></div>`;
 }
 function wireRunning(){

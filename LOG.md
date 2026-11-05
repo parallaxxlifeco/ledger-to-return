@@ -4,6 +4,19 @@ What was built, when, and what you'd need to know to change it. Newest first.
 
 ---
 
+## 2026-11-05 — Sheet actuals summary: money in, out, result, running total, %
+
+"On the sheets actual I don't see the overall summary totals of total in, total out, difference, running total and the percentage change."
+
+- The card at the top of **Report → Sheet actuals** now always shows the year month by month, with a **Year** column: **Money in** (income lines), **Money out** (expense lines, less refunds on them), **Month result** (the difference), then **Running total** and **vs last month**. Before, it showed nothing but the start form until a starting point was set.
+- Without a starting point the first three rows still show; the running total row says to set one.
+- The running total is now carried **back** from the starting point as well as forward (take each month's result off again), so 2026 shows January to June, not only months after June.
+- `monthTotals` (in / out / net per month) feeds it; `monthResults` is its net.
+- His start: **7984.62 at the end of June 2026** — not set yet in his data.
+- Test: `test/running.test.mjs` updated.
+
+---
+
 ## 2026-11-05 — One book: the Tax return / Tracking switch is gone
 
 "There shouldn't be 2 different places to upload — just a single place."
