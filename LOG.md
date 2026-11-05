@@ -4,6 +4,18 @@ What was built, when, and what you'd need to know to change it. Newest first.
 
 ---
 
+## 2026-11-05 — Refunds come off the charge they reverse
+
+- **Why:** money back from a merchant could only be filed as Transfer, so the purchase stayed claimed in full (FY 2025-26: Trip.com $556.94, Adobe $50.15, Yonder Media $18.54).
+- **In Sort:** a refund now shows **↩ Refund of the [date] [amount] charge — take it off [category · line]** with a **Refund it** button, or press **F**. It's filed on the same category and sheet line as the charge, so the two cancel. If the charge was split (e.g. 50/50 with Luiza), the refund is split the same way, each half answered like its half. Done refunds carry a **refund** chip.
+- **Matching (`refundMatch`):** same merchant and currency, charged on or before the refund within 200 days (`REFUND_DAYS`), closest amount within 15% (card refunds drift with FX), else the latest charge big enough to cover a part refund. A charge another refund already took is skipped. Nothing is offered when the charge was only ever a transfer.
+- **Manually:** Business on money in now also lists every expense category under **REFUND OF AN EXPENSE**, for a refund with no matching charge loaded.
+- **Report:** a flag lists refunds of business costs still filed as something else, with **Show them** to open just those in Sort.
+- Re-answering, clearing or joining a refund drops its link (`refundOf`). Undo works as for any answer.
+- Tests: `test/refund.test.mjs`; `test/direction.test.mjs` updated (the refund options are kept apart from the income list).
+
+---
+
 ## 2026-10-20 — "Left out" shows an amount
 
 - The report's **Left out · not business** card now leads with the money that went out and isn't business (personal, drawings, partner's share, tax, loan…), with the three biggest parts listed.

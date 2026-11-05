@@ -383,6 +383,12 @@ em.chip-none{background:var(--warnsoft);color:var(--warn);font-style:normal;font
 .splitmode .rulebox{white-space:normal;align-items:flex-start;padding:6px 10px}
 .splitmode .rulebox input{margin-top:3px}
 /* Split a transaction in two */
+.refundrow{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12.5px;color:var(--ink2);
+  background:var(--surface);border:1px solid var(--accentline);border-left:3px solid var(--accent);border-radius:7px;padding:7px 10px}
+.refundrow .txt{flex:1;min-width:0}
+.refundrow .txt b{color:var(--ink)}
+em.chip-refund{background:var(--surface2);color:var(--accent);font-style:normal;font-size:10.5px;font-weight:600;
+  padding:1px 7px;border-radius:3px;border:1px solid var(--accentline)}
 .splitrow{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12px;color:var(--ink2)}
 .splitrow.open{background:var(--surface);border:1px solid var(--line);border-radius:7px;padding:6px 8px}
 .splitcustom{display:inline-flex;align-items:center;gap:5px}
@@ -2708,8 +2714,12 @@ function pickPool(t){
      stay in both directions — drawings and tax go either way. */
   if(!isTrack()){
     const want=dirOf(t);
-    return CATLIST.filter(c=>c.kind===want||c.kind==="exclude")
+    const pool=CATLIST.filter(c=>c.kind===want||c.kind==="exclude")
       .map(c=>({key:c.key,label:c.label,g:c.group,note:c.ato,hay:c.label+" "+c.group+" "+c.ato}));
+    if(want==="income"&&t.amt>0&&t.src!=="stripe")
+      CATLIST.filter(c=>c.kind==="expense").forEach(c=>pool.push({key:c.key,label:c.label,
+        g:"REFUND OF AN EXPENSE",note:c.group,hay:"refund "+c.label+" "+c.group+" "+c.ato}));
+    return pool;
   }
   if(lineMode(t)){
     const want=dirOf(t);
@@ -2748,9 +2758,15 @@ function pickPool(t){
     const want=dirOf(t);
     /* "The ATO already has it" is offered for money in, and for anything read
        from Stripe — where a refund is a sale undone, not an expense. */
-    return CATLIST.filter(c=>c.kind===want||(c.biz&&(want==="income"||t.src==="stripe")))
+    const pool=CATLIST.filter(c=>c.kind===want||(c.biz&&(want==="income"||t.src==="stripe")))
       .map(c=>({key:c.key,label:c.label,g:c.group,note:c.ato,
       hay:c.label+" "+c.group+" "+c.ato}));
+    /* Money in can be a refund of something bought: every expense category is
+       there too, under its own heading, and it comes off that category. */
+    if(want==="income"&&t.amt>0&&t.src!=="stripe")
+      CATLIST.filter(c=>c.kind==="expense").forEach(c=>pool.push({key:c.key,label:c.label,
+        g:"REFUND OF AN EXPENSE",note:c.group,hay:"refund "+c.label+" "+c.group+" "+c.ato}));
+    return pool;
   }
   return [];
 }
@@ -2903,6 +2919,7 @@ function chips(t){
   else if(t.kind==="business"&&t.noSheet)
     out.push(`<em class="chip-line" title="A deduction on the return, kept off the monthly sheets">Return only</em>`);
   if(t.auto) out.push(`<span class="dot" title="${t.src==="stripe"?"Filled in from Stripe's own label":"Filled in by a rule"}"></span>`);
+  if(t.refundOf) out.unshift(`<em class="chip-refund" title="Money back, taken off the charge it reverses">refund</em>`);
   if(t.split) out.unshift(`<em class="chip-split" title="Part ${t.split.part} of a split ${fmtCur(t.split.amt,t.cur)}">split ${t.split.pct}%</em>`);
   return out.join("");
 }
@@ -2996,6 +3013,7 @@ function activeParts(t){
     }
   }
 
+  body+=refundBlock(t);
   body+=splitBlock(t);
   let right="";
   if(picking||needLine){
@@ -3109,7 +3127,7 @@ function joinSplit(of){
   if(!parts.length) return;
   const first=parts[0];
   const back={...first,id:of,amt:first.split.amt,cat:null,auto:false};
-  delete back.split;
+  delete back.split; delete back.refundOf;
   if(isTrack()){ back.kind=null; back.tax=null; back.line=null; }
   const i=bk.tx.indexOf(first);
   bk.tx=bk.tx.filter(x=>!(x.split&&x.split.of===of));
@@ -3117,6 +3135,119 @@ function joinSplit(of){
   curId=of; resetPick(); markDirty(); renderAll();
   toast("Joined back into one — answer it again");
 }
+/* ---- refunds ----
+   Money back from a merchant is the purchase going backwards, so it belongs on
+   the same category and sheet line as the purchase, where it comes off. Filed
+   as a Transfer — the only place a refund could go before — it dropped out of
+   everything and the purchase stayed claimed in full: a refunded Trip.com
+   flight still deducted, an Adobe refund still counted as spent.
+
+   refundMatch finds the purchase: same merchant, same currency, paid out on or
+   before the refund within REFUND_DAYS, the closest amount (within 15% — card
+   refunds drift with the exchange rate) or else the latest one big enough to
+   cover a part refund. A purchase that was split — half his, half Luiza's — is
+   matched as the whole, and the refund is split the same way, each half
+   answered like the half it reverses. A purchase another refund already took
+   is skipped, so two refunds don't land on one charge. */
+const REFUND_DAYS=200;
+function refundMatch(t){
+  if(!t||!(t.amt>0)||t.src==="stripe"||!t.mk||t.split||t.refundOf) return null;
+  const tD=+new Date(t.date), groups=new Map();
+  for(const x of B().tx){
+    if(x.id===t.id||x.mk!==t.mk||!(x.amt<0)||x.cur!==t.cur||x.date>t.date) continue;
+    if((tD-new Date(x.date))/864e5>REFUND_DAYS) continue;
+    const k=x.split?x.split.of:x.id;
+    const g=groups.get(k)||{key:k,date:x.date,total:x.split?x.split.amt:x.amt,parts:[]};
+    g.parts.push(x); groups.set(k,g);
+  }
+  const taken=new Set(B().tx.filter(x=>x.refundOf&&!(x.split&&x.split.of===t.id)).map(x=>x.refundOf));
+  let best=null,bestScore=null;
+  for(const g of groups.values()){
+    if(taken.has(g.key)) continue;
+    g.parts.sort((a,b)=>(a.split?a.split.part:0)-(b.split?b.split.part:0));
+    if(g.parts[0].split&&g.parts.length!==g.parts[0].split.n) continue;
+    if(!g.parts.every(p=>isTrack()?settled(p):!!p.cat)) continue;
+    /* Nothing to reverse if the purchase was never on a sheet or the return. */
+    if(isTrack()&&!g.parts.some(p=>p.kind==="business"||p.kind==="personal")) continue;
+    const paid=-g.total, off=Math.abs(paid-t.amt)/t.amt;
+    const close=off<=0.15, covers=paid>=t.amt*0.98;
+    if(!close&&!covers) continue;
+    const score=[close?0:1, close?off:0, -new Date(g.date)];
+    if(!bestScore||score[0]<bestScore[0]||(score[0]===bestScore[0]&&(score[1]<bestScore[1]-1e-9||
+       (Math.abs(score[1]-bestScore[1])<1e-9&&score[2]<bestScore[2])))){ best=g; bestScore=score; }
+  }
+  return best;
+}
+/* Already answered the way the refund would be? Then there is nothing to offer. */
+function refundOffer(t){
+  const m=refundMatch(t); if(!m) return null;
+  if(m.parts.length===1){
+    const o=m.parts[0];
+    if(isTrack()?(t.kind===o.kind&&t.tax===o.tax&&(t.line||null)===(o.line||null)):t.cat===o.cat) return null;
+  }
+  return m;
+}
+function refundAnswer(p){
+  if(!isTrack()) return CAT[p.cat]?CAT[p.cat].label:"—";
+  if(p.kind==="business") return `${CAT[p.tax]?CAT[p.tax].label:"Business"}${p.line?" · "+lineLabel(p.line):p.noSheet?" · return only":""}`;
+  if(p.kind==="personal") return `Personal · ${p.line?lineLabel(p.line):"—"}`;
+  if(p.kind==="exclude") return CAT[p.tax]?CAT[p.tax].label:"Other";
+  return (KINDS.find(k=>k.k===p.kind)||{label:p.kind}).label;
+}
+function refundBlock(t){
+  const m=refundOffer(t); if(!m) return "";
+  const sp=m.parts[0].split;
+  const what=sp?`split ${sp.pct}/${100-sp.pct} like it: ${m.parts.map(refundAnswer).join(" + ")}`:refundAnswer(m.parts[0]);
+  return `<div class="refundrow"><span class="txt">↩ Refund of the <b>${niceDate(m.date)} ${esc(fmtCur(-m.total,t.cur))}</b> charge — take it off ${esc(what)}</span>
+    <button class="btn sm pri" data-refund="${esc(t.id)}" title="File this the same way as the charge, so the two cancel out">Refund it <kbd>F</kbd></button></div>`;
+}
+function applyRefund(id){
+  const bk=B(), t=bk.tx.find(x=>x.id===id); if(!t) return;
+  const m=refundMatch(t); if(!m) return;
+  checkpoint(t.id,"refund "+t.desc.slice(0,32));
+  const list=visibleTx(), i=list.findIndex(x=>x.id===t.id);
+  const nextId=fromReport?((list[i+1]||{}).id||null)
+    :(list.slice(i+1).find(x=>filter!=="todo"||!settled(x))||{}).id||null;
+  const copy=(dst,src)=>{
+    if(isTrack()){
+      dst.kind=src.kind; dst.tax=src.tax; dst.line=src.line||null;
+      if(src.noSheet) dst.noSheet=true; else delete dst.noSheet;
+    }else dst.cat=src.cat;
+    dst.auto=false; dst.refundOf=m.key;
+  };
+  const sp=m.parts[0].split;
+  if(sp){
+    const amts=splitAmounts(t.amt,sp.pct,t.cur);
+    const parts=amts.map((amt,k)=>{
+      const c={...t,id:t.id+"~"+(k+1),amt,cat:null,split:{of:t.id,part:k+1,n:2,pct:k?100-sp.pct:sp.pct,amt:t.amt}};
+      delete c.ref; copy(c,m.parts[k]); return c;
+    });
+    bk.tx.splice(bk.tx.indexOf(t),1,...parts);
+    if(fromReport) parts.forEach(p=>fromReport.ids.add(p.id));
+    if(backToReport===t.id) backToReport=parts[0].id;
+    if(curId===t.id) curId=parts[0].id;
+  }else copy(t,m.parts[0]);
+  markDirty();
+  toast(`Refund taken off — filed like the ${niceDate(m.date)} charge`);
+  advance(nextId);
+}
+/* The report's list: refunds of business costs that are still filed as
+   something else, so the cost they reverse is claimed in full. */
+function refundsMissed(rows){
+  return rows.filter(t=>{
+    if(!(t.amt>0)||t.refundOf) return false;
+    const m=refundOffer(t);
+    return !!m&&m.parts.some(p=>isTrack()?(p.kind==="business"&&CAT[p.tax]&&CAT[p.tax].kind==="expense")
+                                         :(CAT[p.cat]&&CAT[p.cat].kind==="expense"));
+  });
+}
+function showRefunds(ids){
+  if(!ids.length) return;
+  fromReport={label:"Refunds to take off",ids:new Set(ids),scroll:window.scrollY,filter,listQ,acctQ};
+  backToReport=null; curId=ids[0]; resetPick();
+  go("sort"); renderList();
+}
+
 /* ---- the sort screen as a fixed two-pane layout (wide screens) ----
    Left: the transaction being answered, and under it the whole queue. Right:
    the pick list, always in the same place — so nothing jumps between rows, and
@@ -3180,6 +3311,7 @@ window.addEventListener("resize",()=>{
   const m=splitMode(); if(m!==lastSplit&&$("#rowList")) renderList();
 });
 function wireCards(){
+  $$("#rowList [data-refund]").forEach(b=>b.addEventListener("click",e=>{ e.stopPropagation(); applyRefund(b.dataset.refund); }));
   $$("#rowList [data-who]").forEach(a=>a.addEventListener("click",e=>{
     if(!splitMode()||e.metaKey||e.ctrlKey||e.shiftKey) return;   // narrow screen, or asked for a tab
     e.preventDefault(); e.stopPropagation();
@@ -3278,7 +3410,7 @@ function setKind(kind){
   checkpoint(t.id,t.desc.slice(0,40));
   const list=visibleTx(), i=list.findIndex(x=>x.id===t.id);
   const nextId=(list.slice(i+1).find(x=>filter!=="todo"||!settled(x))||{}).id||null;
-  t.line=null; t.auto=false;
+  t.line=null; t.auto=false; delete t.refundOf;
   t.kind=kind;
   t.tax=kind==="personal"?"x_personal":kind==="transfer"?"x_transfer":null;
   pickMode=null; pickQ=""; pickSel=0; whoOpen=null;     // answering brings the list back
@@ -3432,7 +3564,7 @@ function unassign(){
   checkpoint(t.id,"cleared "+t.desc.slice(0,32));
   if(isTrack()){ t.kind=null; t.line=null; t.tax=null; }
   else t.cat=null;
-  t.auto=false; resetPick(); markDirty(); renderList();
+  t.auto=false; delete t.refundOf; resetPick(); markDirty(); renderList();
 }
 
 /* ---------- rules ---------- */
@@ -3895,6 +4027,12 @@ function renderTaxReport(){
   const net=d.totalIncome-d.totalExpense;
   const flags=[];
   if(d.unsorted.length) flags.push(["crit",`${d.unsorted.length} transaction${d.unsorted.length===1?"":"s"} without a tax category`,isTrack()?`They are left out of every total below. In Sort, the “Needs tax” filter shows the ones on a tracker line that still need one.`:`They are left out of every total below. Sort them before you send this on.`]);
+  const missed=refundsMissed(d.inFYr);
+  if(missed.length){
+    const ex=missed.slice(0,3).map(t=>`${esc(t.desc.slice(0,28))} ${esc(fmtCur(t.amt,t.cur))}`).join(", ");
+    flags.push(["warn",`${missed.length} refund${missed.length===1?"":"s"} of business costs not taken off`,
+      `${ex}${missed.length>3?` and ${missed.length-3} more`:""}. ${missed.length===1?"It is":"They are"} filed as something else, so the cost ${missed.length===1?"it reverses is":"they reverse is"} still claimed in full. <button class="btn sm noprint" data-refunds="${missed.map(t=>esc(t.id)).join(" ")}">Show ${missed.length===1?"it":"them"}</button>`]);
+  }
   if(d.norate.length) flags.push(["crit",`${d.norate.length} row${d.norate.length===1?"":"s"} could not be converted`,`No published rate for that currency and date. They are excluded from the totals.`]);
   if(d.stale.length) flags.push(["warn",`${d.stale.length} row${d.stale.length===1?"":"s"} past the end of the rate table`,`Converted at ${RATES.end}, the last published rate. Ask Claude to refresh the rates and these will settle.`]);
   if(d.autos.length) flags.push(["warn",`${d.autos.length} filled in automatically`,`Matched a description you sorted before. Worth a skim in the Sort tab under “Auto-filled”.`]);
@@ -4021,6 +4159,7 @@ function renderTaxReport(){
     const k=r.dataset.cat; repOpen.has(k)?repOpen.delete(k):repOpen.add(k);
     const y=window.scrollY; renderReport(); window.scrollTo(0,y);
   }));
+  $$("#reportInner [data-refunds]").forEach(bt=>bt.addEventListener("click",e=>{ e.stopPropagation(); showRefunds(bt.dataset.refunds.split(" ").filter(Boolean)); }));
   $$("#reportInner [data-reassign]").forEach(bt=>bt.addEventListener("click",e=>{ e.stopPropagation(); reassign(bt.dataset.reassign,bt.dataset.cat); }));
   $("#bizName").addEventListener("input",e=>{B().biz.name=e.target.value;markDirty();});
   $("#bizAbn").addEventListener("input",e=>{B().biz.abn=e.target.value;markDirty();});
@@ -4402,6 +4541,10 @@ document.addEventListener("keydown",e=>{
   if(e.key==="Backspace"&&!pickQ){ e.preventDefault(); unassign(); return; }
 
   /* The three answers, while nothing is typed into the picker. */
+  /* F files a refund like the charge it reverses, when one is offered. */
+  if(!pickQ&&(e.key==="f"||e.key==="F")&&t&&refundOffer(t)){
+    e.preventDefault(); applyRefund(t.id); return;
+  }
   /* S opens the split form, before an answer is started. */
   if(!pickQ&&!pickMode&&(e.key==="s"||e.key==="S")&&t&&!t.split){
     e.preventDefault(); splitOpen=t.id; renderList(); return;

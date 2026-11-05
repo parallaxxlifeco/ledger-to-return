@@ -36,7 +36,11 @@ const cats = await p.evaluate(() => {
   const r = {};
   for (const id of ['out', 'in']) {
     curId = id; setKind('business');
-    r[id] = pickPool(currentTx()).map(o => o.label);
+    /* Money in also lists the expense categories, under their own heading, as
+       refunds of a purchase — those are kept apart from the income list here. */
+    const pool = pickPool(currentTx());
+    r[id] = pool.filter(o => o.g !== 'REFUND OF AN EXPENSE').map(o => o.label);
+    r[id + 'Refund'] = pool.filter(o => o.g === 'REFUND OF AN EXPENSE').length;
   }
   return r;
 });
@@ -46,6 +50,8 @@ check('an expense offers no income categories',
 check('income offers ticket sales', cats.in.some(l => /ticket/i.test(l)), cats.in.filter(l => /ticket/i.test(l)).join(', '));
 check('the two lists do not overlap',
   !cats.out.some(l => cats.in.includes(l)), `${cats.out.length} out / ${cats.in.length} in`);
+check('money in also offers expense categories as refunds, money out does not',
+  cats.inRefund > 0 && cats.outRefund === 0, `${cats.inRefund} refund options`);
 
 /* --- the sheet line list that follows it: the actual gap --- */
 const lines = await p.evaluate(() => {
