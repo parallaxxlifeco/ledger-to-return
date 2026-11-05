@@ -4,6 +4,21 @@ What was built, when, and what you'd need to know to change it. Newest first.
 
 ---
 
+## 2026-11-05 — Always asks to connect Drive, and never loses either side
+
+"Can you build in that it automatically prompts connect to Drive so I never forget and keeps everything on file?"
+
+- **Why it can't connect on its own:** Google only opens its sign-in window from a click, so a fresh tab couldn't connect silently and sat on "Drive not connected".
+- **The prompt:** each time a tab opens without Drive, a **Connect Google Drive?** box comes up (Connect is the default button). **Not now** leaves a bar across the top of every page until it's connected. If a save to Drive fails (usually the hour-long sign-in running out), the bar comes back as **Reconnect**. No pop-up on localhost, so tests aren't blocked; the bar still shows.
+- **Connecting no longer shows Google's full consent screen every time** (`prompt:""` instead of `"consent"`).
+- **Nothing lost on connect (`reconcile`):** before, Drive won whenever it had as many rows, so answers made while disconnected were overwritten. Now this browser remembers (localStorage `l2r.sync`) the Drive version it last matched and whether it has unsaved changes:
+  - nothing unsaved here → Drive's version is loaded
+  - changes here, Drive unchanged since → this browser's goes up
+  - both changed, or no record yet → it asks which to keep, and saves the other in Drive as a dated snapshot ("ledger-to-return YYYY-MM-DD (Drive copy).json" / "(this browser).json")
+- Test: `test/drivesync.test.mjs` (a stand-in for Drive).
+
+---
+
 ## 2026-11-05 — The same transaction from two statements, loaded once
 
 "Can we build a no duplicate feature then? Same transaction, amount, time, date gets skipped / stripped?"

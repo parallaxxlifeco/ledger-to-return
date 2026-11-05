@@ -102,6 +102,13 @@ button,input,select,textarea{font:inherit;color:inherit}
 .progbar{width:110px;height:5px;border-radius:3px;background:var(--surface2);overflow:hidden}
 .progbar>span{display:block;height:100%;background:var(--accent);transition:width .3s ease;width:0}
 .progtxt{font-size:11.5px;color:var(--ink2);font-family:"IBM Plex Mono",monospace}
+.drivebanner{display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap;padding:8px 16px;
+  background:var(--warnsoft,#FBF1DC);border-bottom:1px solid var(--warn);color:var(--warn);font-size:13px;font-weight:600}
+.drivebanner[hidden]{display:none}
+dialog.driveask{border:1px solid var(--line);border-radius:12px;padding:22px 24px;max-width:420px;background:var(--surface);color:var(--ink)}
+dialog.driveask::backdrop{background:rgba(20,24,28,.45)}
+dialog.driveask h2{font-size:17px;margin:0 0 6px}
+dialog.driveask p{font-size:13px;color:var(--ink2);margin:0 0 16px}
 .saveflag{
   font-size:11px;color:var(--ink3);font-family:"IBM Plex Mono",monospace;text-align:right;
   background:transparent;border:0;padding:2px 4px;border-radius:4px;cursor:pointer;white-space:nowrap;
@@ -556,6 +563,16 @@ table.inner td,table.inner th{font-size:12px;padding:5px 8px}
     <button class="saveflag" id="saveFlag" title="Where your work is saved">starting…</button>
   </div>
 </header>
+<div class="drivebanner noprint" id="driveBanner" hidden><span id="driveBannerTxt">Not saving to Google Drive — changes are only in this browser.</span>
+  <button class="btn sm pri" id="driveBannerBtn">Connect Google Drive</button></div>
+<dialog class="driveask" id="driveAsk">
+  <h2>Connect Google Drive?</h2>
+  <p>So everything you do here is saved to Drive and is there on any device. It only takes a click.</p>
+  <div style="display:flex;gap:8px;justify-content:flex-end">
+    <button class="btn" id="driveAskLater">Not now</button>
+    <button class="btn pri" id="driveAskGo" autofocus>Connect Google Drive</button>
+  </div>
+</dialog>
 
 <main>
 <!-- ============ IMPORT ============ -->
@@ -2013,11 +2030,70 @@ function markDirty(){
   dirty=true; renderStorage("saving\u2026");
   clearTimeout(saveTimer); saveTimer=setTimeout(persist,700);
 }
+/* ---- keeping this browser and Drive in step ----
+   Drive used to win on connect whenever it held as many rows, so work done
+   while disconnected — answers, not new rows — was quietly replaced. Now this
+   browser remembers (SYNC_KEY) the Drive version it last matched and whether
+   it has changes Drive hasn't seen. On connect: nothing unsaved here → take
+   Drive; Drive unchanged since → send this browser's; both changed → ask, and
+   keep the other one in Drive as a dated snapshot. Nothing is thrown away. */
+const SYNC_KEY="l2r.sync";
+const syncGet=()=>{ try{ return JSON.parse(localStorage.getItem(SYNC_KEY))||{}; }catch(e){ return {}; } };
+const syncSet=o=>{ try{ localStorage.setItem(SYNC_KEY,JSON.stringify({...syncGet(),...o})); }catch(e){} };
+let driveFailed=false;
 async function persist(){
   localSave();
-  if(!Store||!Store.connected){ dirty=false; renderStorage(); return; }
-  try{ await Store.save(S); dirty=false; renderStorage(); }
-  catch(e){ console.warn("save failed",e); renderStorage("saved here only",true); }
+  if(!Store||!Store.connected){
+    if(Store&&Store.mode==="local") syncSet({pending:true,localAt:new Date().toISOString()});
+    dirty=false; renderStorage(); return;
+  }
+  try{
+    const at=await Store.save(S);
+    if(Store.mode==="drive") syncSet({at:at||null,pending:false});
+    driveFailed=false; dirty=false; renderStorage();
+  }
+  catch(e){
+    console.warn("save failed",e);
+    if(Store.mode==="drive"){ driveFailed=true; syncSet({pending:true,localAt:new Date().toISOString()}); }
+    renderStorage("saved here only",true);
+  }
+}
+function adoptRemote(remote){
+  S=Object.assign(S,remote);
+  S.lineFor=remote.lineFor||S.lineFor||{};
+  if(Array.isArray(remote.tracks)&&remote.tracks.length){ TRACKS=remote.tracks; indexTracks(); S.tracks=TRACKS; }
+  normaliseTrackKeys();
+  pruneRetired();
+  localSave();
+  syncSet({at:remote.savedAt||null,pending:false});
+}
+async function pushLocal(){
+  const at=await Store.save(S);
+  syncSet({at:at||null,pending:false}); driveFailed=false;
+}
+const whenText=iso=>{ if(!iso) return "an unknown time"; const d=new Date(iso);
+  return d.toLocaleDateString("en-AU",{day:"numeric",month:"short"})+" "+d.toLocaleTimeString("en-AU",{hour:"numeric",minute:"2-digit"}); };
+/* Returns what happened: "loaded", "pushed", "same", "kept-local" or "kept-drive". */
+async function reconcile(remote){
+  const count=st=>st?st.books.tax.tx.length+st.books.track.tx.length:0;
+  const localCount=count(S), sy=syncGet();
+  if(!remote){ if(localCount) await pushLocal(); return "pushed"; }
+  if(!localCount){ adoptRemote(remote); return "loaded"; }
+  if(JSON.stringify(remote.books)===JSON.stringify(S.books)){ syncSet({at:remote.savedAt||null,pending:false}); return "same"; }
+  const known="pending" in sy;
+  if(known&&!sy.pending){ adoptRemote(remote); return "loaded"; }
+  if(known&&sy.pending&&sy.at&&remote.savedAt===sy.at){ await pushLocal(); return "pushed"; }
+  /* Both sides changed — or this browser has no record yet. Ask. */
+  const keepLocal=confirm(
+    `This browser and Google Drive have different versions.\n\n`+
+    `This browser: ${localCount} transactions, last changed ${whenText(sy.localAt)}.\n`+
+    `Drive: ${count(remote)} transactions, saved ${whenText(remote.savedAt)}.\n\n`+
+    `OK — keep this browser's version.\nCancel — use Drive's version.\n\n`+
+    `The other one is kept in Drive as a dated snapshot, so nothing is lost.`);
+  try{
+    if(keepLocal){ await Store.snapshot(remote,"(Drive copy)"); await pushLocal(); return "kept-local"; }
+    await Store.snapshot(S,"(this browser)"); adoptRemote(remote); return "kept-drive";
+  }catch(e){ console.warn("snapshot failed",e); if(keepLocal){ await pushLocal(); return "kept-local"; } adoptRemote(remote); return "kept-drive"; }
 }
 /* The folded notes are part of what the accountant gets: open them for print. */
 window.addEventListener("beforeprint",()=>$$(".notesfold").forEach(d=>{ if(!d.open){ d.open=true; d.dataset.reclose="1"; } }));
@@ -2043,20 +2119,17 @@ async function boot(){
     catch(e){ console.warn("drive silent sign-in failed",e); Store=localStore; }
   }
   renderStorage();
-  if(Store.mode==="local"){ if(S.books.tax.tx.length||S.books.track.tx.length) localSave(); return; }
+  if(Store.mode==="local"){ if(S.books.tax.tx.length||S.books.track.tx.length) localSave(); askForDrive(); return; }
 
   try{
     const remote=await Store.load();
-    const localCount=S.books.tax.tx.length+S.books.track.tx.length;
-    const remoteCount=remote?remote.books.tax.tx.length+remote.books.track.tx.length:0;
-    if(remote&&remoteCount>=localCount){
-      S=Object.assign(S,remote);
-      S.lineFor=remote.lineFor||S.lineFor||{};
-      if(Array.isArray(remote.tracks)&&remote.tracks.length){ TRACKS=remote.tracks; indexTracks(); S.tracks=TRACKS; }
-      normaliseTrackKeys();
-      pruneRetired();
-      localSave();
-    }else if(localCount){ markDirty(); }
+    if(Store.mode==="drive") await reconcile(remote);
+    else{
+      const localCount=S.books.tax.tx.length+S.books.track.tx.length;
+      const remoteCount=remote?remote.books.tax.tx.length+remote.books.track.tx.length:0;
+      if(remote&&remoteCount>=localCount) adoptRemote(remote);
+      else if(localCount){ markDirty(); }
+    }
   }catch(e){
     console.warn("load failed",e);
     renderStorage("saved here only",true);
@@ -2544,7 +2617,9 @@ function getToken(interactive){
       try{ sessionStorage.setItem("l2r.tok",JSON.stringify({t:accessToken,e:tokenExpiry})); }catch(e){}
       resolve(accessToken);
     };
-    try{ tokenClient.requestAccessToken({prompt:interactive?"consent":""}); }
+    /* "" asks only the first time; "consent" put the full consent screen up on
+       every connect, which is what made connecting feel like a chore. */
+    try{ tokenClient.requestAccessToken({prompt:""}); }
     catch(e){ reject(e); }
   });
 }
@@ -2575,7 +2650,8 @@ function driveStore(){
       return migrate(body);
     },
     async save(st){
-      const payload=JSON.stringify({...st,tracks:TRACKS,savedAt:new Date().toISOString()});
+      const savedAt=new Date().toISOString();
+      const payload=JSON.stringify({...st,tracks:TRACKS,savedAt});
       if(!driveFileId){
         const f=await findDriveFile();
         if(f) driveFileId=f.id;
@@ -2586,6 +2662,7 @@ function driveStore(){
         if(r.status===404){ driveFileId=null; return this.save(st); }
         if(!r.ok) throw new Error("drive write failed: "+r.status);
         lastRemoteAt=(await r.json()).modifiedTime;
+        return savedAt;
       }else{
         const boundary="l2r"+Math.random().toString(36).slice(2);
         const meta={name:DRIVE_FILE,mimeType:"application/json",
@@ -2596,10 +2673,11 @@ function driveStore(){
           {method:"POST",headers:{"Content-Type":"multipart/related; boundary="+boundary},body});
         if(!r.ok) throw new Error("drive create failed: "+r.status);
         const j=await r.json(); driveFileId=j.id; lastRemoteAt=j.modifiedTime;
+        return savedAt;
       }
     },
-    async snapshot(st){
-      const name=`ledger-to-return ${new Date().toISOString().slice(0,10)}.json`;
+    async snapshot(st,label){
+      const name=`ledger-to-return ${new Date().toISOString().slice(0,10)}${label?" "+label:""}.json`;
       const boundary="l2r"+Math.random().toString(36).slice(2);
       const meta={name,mimeType:"application/json",description:"Dated snapshot from Ledger to Return."};
       const body=`--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(meta)}\r\n`+
@@ -2614,6 +2692,37 @@ function driveStore(){
 const localStore={mode:"local",name:"this browser",connected:false,
   async load(){return null;}, async save(){}};
 
+/* ---- never forget to connect ----
+   A Google sign-in window can only open from a click, so the app can't connect
+   on its own when a tab opens. Instead it asks, every time a tab opens without
+   Drive, and keeps a bar across the top until it's connected — or when a save
+   to Drive fails, usually because the hour-long sign-in ran out. */
+const isDevHost=()=>/^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname)||location.protocol==="file:";
+function driveNeeded(){
+  const inArtifact=!!(window.claude&&typeof claude.use==="function");
+  return !inArtifact&&!!clientId()&&!!Store&&(Store.mode!=="drive"||driveFailed);
+}
+function renderDriveBanner(){
+  const b=$("#driveBanner"); if(!b) return;
+  const need=driveNeeded();
+  b.hidden=!need;
+  if(need) $("#driveBannerTxt").textContent=driveFailed
+    ? "Drive stopped saving — your changes are only in this browser until you reconnect."
+    : "Not saving to Google Drive — changes are only in this browser.";
+  $("#driveBannerBtn").textContent=driveFailed?"Reconnect":"Connect Google Drive";
+}
+function askForDrive(){
+  renderDriveBanner();
+  if(!driveNeeded()||isDevHost()) return;
+  const d=$("#driveAsk"); if(!d||d.open||typeof d.showModal!=="function") return;
+  d.showModal();
+}
+async function connectDriveNow(){
+  const d=$("#driveAsk"); if(d&&d.open) d.close();
+  if(driveFailed){ accessToken=null; }
+  await connectDrive();
+  renderDriveBanner();
+}
 async function connectDrive(){
   if(!window.google||!google.accounts||!google.accounts.oauth2){
     toast("Google sign-in didn't load. Check the connection and reload."); return;
@@ -2623,16 +2732,13 @@ async function connectDrive(){
     accessToken=null;
     await getToken(true);
     Store=driveStore();
+    setDriveLinked(true);
     const remote=await Store.load();
-    const localCount=S.books.tax.tx.length+S.books.track.tx.length;
-    const remoteCount=remote?remote.books.tax.tx.length+remote.books.track.tx.length:0;
-    if(remote&&remoteCount>=localCount){
-      S=Object.assign(S,remote);
-      if(Array.isArray(remote.tracks)&&remote.tracks.length){ TRACKS=remote.tracks; indexTracks(); }
-      localSave(); toast(`Connected — loaded ${remoteCount} transactions from Drive`);
-    }else{
-      await Store.save(S); toast(remote?"Connected — your local copy was newer, so Drive now matches it":"Connected — saved to Drive");
-    }
+    const how=await reconcile(remote);
+    driveFailed=false;
+    toast({loaded:"Connected — loaded your latest from Drive",pushed:"Connected — Drive now has your changes from this browser",
+      same:"Connected — saving to Drive",["kept-local"]:"Connected — kept this browser's version; Drive's is saved as a snapshot",
+      ["kept-drive"]:"Connected — using Drive's version; this browser's is saved as a snapshot"}[how]||"Connected");
     dirty=false; renderAll(); renderStorage();
   }catch(e){
     console.warn("drive connect failed",e);
@@ -2660,6 +2766,7 @@ function storageState(){
   return {label:"this browser only",tone:"warn"};
 }
 function renderStorage(override,warn){
+  renderDriveBanner();
   const el=$("#saveFlag");
   if(el){
     const st=storageState();
@@ -4750,6 +4857,9 @@ document.addEventListener("keydown",e=>{
   if(e.key.length===1&&!inPick&&$("#pickInput")) focusPick();
 });
 
+$("#driveBannerBtn").addEventListener("click",connectDriveNow);
+$("#driveAskGo").addEventListener("click",connectDriveNow);
+$("#driveAskLater").addEventListener("click",()=>$("#driveAsk").close());
 /* backup + restore */
 $("#btnBackup").addEventListener("click",backupFile);
 $("#saveFlag").addEventListener("click",()=>{
