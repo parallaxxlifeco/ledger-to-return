@@ -120,6 +120,41 @@ const spaced = await p.evaluate(lines => {
 check('a Saver statement from the new engine reads the same', spaced && spaced.ok && spaced.rows === 5 && spaced.out === 1000 && spaced.inn === 1060,
   JSON.stringify(spaced));
 
+/* ---------------- the Saver layout from August 2025 ---------------- */
+/* No "$" on any figure; "Value Date 09/01/2026" under a transfer settled the
+   next day; a payer reference ending in a digit right before the amount; an
+   account emptied to "0.00" with no CR and closed as "Nil"; and the "+" lost
+   from the totals line. Shaped as pdfLines() returns his 2026 statements;
+   every figure and name here is invented. */
+const SAVER26 = [
+  'Your Statement', 'Statement 7 Page 1 of 3)', 'Account Number 06 0000 12345678', 'Statement',
+  'Period 1 Feb 2026 - 31 Jul 2026', 'Closing Balance Nil', 'NetBank Saver',
+  'Date Transaction Debit Credit Balance',
+  '01 Feb 2026 OPENING BALANCE 1,000.00 CR',
+  '01 Feb Credit Interest 1.00 1,001.00 CR',
+  '09 Feb Direct Credit 999999 AMAZON COMMERCIA',
+  'DASTESTREFZZ6D7 67.23 1,068.23 CR',
+  '22 Feb Transfer to xx0000 CommBank app',
+  'Example',
+  'Value Date 23/02/2026 1,000.00 68.23 CR',
+  'Statement 7 Page 2 of 3)', 'Account Number 06 0000 12345678', 'Date Transaction Debit Credit Balance',
+  '20 May Transfer to xx0000 CommBank app',
+  'Example 68.23 0.00',
+  '01 Jul CREDIT INTEREST EARNED on this account',
+  'to June 30, 2026 is 26.29',
+  '31 Jul 2026 CLOSING BALANCE Nil',
+  'Opening balance - Total debits Total credits = Closing balance',
+  '1,000.00 CR 1,068.23 68.23 Nil',
+];
+const s26 = await p.evaluate(lines => { const g = readCbaAccount(lines);
+  return g && {rec: g.rec, rows: g.rows.map(x => ({aud: x.aud, desc: x.desc}))}; }, SAVER26);
+console.log('\nTHE SAVER LAYOUT FROM AUGUST 2025:');
+check('read at all — figures with no "$"', !!s26);
+check('four rows; the interest note is not one', s26 && s26.rows.length === 4, s26 && JSON.stringify(s26.rows));
+check('"…ZO6D7 67.23" is $67.23, not $7.67', s26 && s26.rows.some(x => x.aud === 67.23) && s26.rec.mismatch === 0, s26 && JSON.stringify(s26.rec));
+check('"Value Date …" is not part of the description', s26 && s26.rows.some(x => x.desc === 'Transfer to xx0000 CommBank app Example' && x.aud === -1000));
+check('emptied to "0.00" and closed "Nil" — and it balances', s26 && s26.rows.some(x => x.aud === -68.23) && s26.rec.closing === 0 && s26.rec.ok === true, s26 && JSON.stringify(s26.rec));
+
 console.log(bad ? `\n${bad} CHECK(S) FAILED` : '\nAccount statements read correctly');
 console.log('PAGE ERRORS:', errs.length ? errs : 'none');
 await b.close();

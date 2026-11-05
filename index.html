@@ -1488,7 +1488,9 @@ function readCbaCard(lines){
    checked against that movement, and the whole statement against its own
    "Opening − Total debits + Total credits = Closing" line. */
 const CBA_ACCT_PERIOD=/(?:^|\s)Period (\d{1,2}) (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) (\d{4}) *- *(\d{1,2}) (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) (\d{4})/;
-const CBA_BAL=/\$ ?([\d,]+[. ]\d{2}) (CR|DR)$/;          // the balance that ends a row
+/* The balance that ends a row. Statements to mid-2025 print it "$5,588.94 CR";
+   from August 2025 the "$" is gone — "3,406.09 CR" — so it's optional. */
+const CBA_BAL=/\$? ?(?:([\d,]+[. ]\d{2}) (CR|DR)|(0\.00|Nil))$/;   // an emptied account ends "0.00" or "Nil", with no CR
 const CBA_DAY=/^(\d{1,2}) (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)(?: |$)(.*)$/;
 const CBA_PRODUCTS=/\b(NetBank Saver|GoalSaver|Smart Access|Complete Access|Everyday Offset|Streamline Basic|Business Transaction Account|Business Online Saver|Business Everyday|Pensioner Security|Wealth Package|Standard Variable Rate Home Loan)\b/;
 
@@ -1503,7 +1505,7 @@ function readCbaAccount(lines){
   const last4=accNo?accNo[1].replace(/\D/g,"").slice(-4):"";
   const prod=CBA_PRODUCTS.exec(all);
   const acct="CommBank "+(prod?prod[1]:"account")+(last4?" "+last4:"");
-  const signed=(v,cd)=>cd==="DR"?-cbaFig(v):cbaFig(v);
+  const signed=(v,cd)=>v==null||v==="Nil"?0:cd==="DR"?-cbaFig(v):cbaFig(v);
   const dateFor=(day,mon)=>{
     for(const y of [start.getFullYear(),end.getFullYear()]){
       const d=new Date(y,CBA_MON[mon],day);
@@ -1512,15 +1514,15 @@ function readCbaAccount(lines){
     return new Date(start.getFullYear(),CBA_MON[mon],day);
   };
   const r2=n=>Math.round(n*100)/100;
-  const opening=(/OPENING BALANCE \$ ?([\d,]+[. ]\d{2}) (CR|DR)/.exec(all));
-  const closing=(/CLOSING BALANCE \$ ?([\d,]+[. ]\d{2}) (CR|DR)/.exec(all));
+  const opening=(/OPENING BALANCE \$? ?(?:([\d,]+[. ]\d{2}) (CR|DR)|Nil|0\.00)/.exec(all));
+  const closing=(/CLOSING BALANCE \$? ?(?:([\d,]+[. ]\d{2}) (CR|DR)|Nil|0\.00)/.exec(all));
   if(!opening||!closing) return null;
   let bal=signed(opening[1],opening[2]);
   const rows=[];let pending=null,mismatch=0;
   for(const line of lines){
     if(/OPENING BALANCE/.test(line)) continue;
     if(/CLOSING BALANCE/.test(line)) break;
-    if(/^(Statement \d+ \(Page|Account Number|Date Transaction Debit Credit Balance)/.test(line)) continue;
+    if(/^(Statement \d+ \(?Page|Account Number|Date Transaction Debit Credit Balance)/.test(line)) continue;
     const d=CBA_DAY.exec(line);
     let text=line;
     if(d){ pending={day:+d[1],mon:d[2],parts:[]}; text=d[3]; }
@@ -1534,12 +1536,18 @@ function readCbaAccount(lines){
     /* The row ends here. What sits between the words and the balance is the
        printed debit or credit, with the other column's stray "$". */
     const head=text.slice(0,b.index);
-    const figs=[...head.matchAll(/([\d,]+[. ]\d{2})(?!\d)/g)].map(m=>cbaFig(m[1]));
+    /* Whole "1,234.56" figures first. Only a statement printing the cents after
+       a space needs the looser match — which, given a reference ending in a
+       digit ("…ZO6D7 67.23"), would read "7 67" as $7.67. */
+    const dotFigs=[...head.matchAll(/(?:^|\s)\$?([\d,]+\.\d{2})(?=\s|$)/g)].map(m=>cbaFig(m[1]));
+    const figs=dotFigs.length?dotFigs:[...head.matchAll(/([\d,]+[. ]\d{2})(?!\d)/g)].map(m=>cbaFig(m[1]));
     const words=head.replace(/\$ ?[\d,]+[. ]\d{2}(?!\d)|[\d,]+\.\d{2}|\$/g," ");
-    const now=signed(b[1],b[2]);
+    const now=b[3]?0:signed(b[1],b[2]);
     const amt=r2(now-bal);
     if(!figs.length||Math.abs(Math.abs(amt)-figs[figs.length-1])>0.005) mismatch++;
-    const tail=words.trim();
+    /* "Value Date 09/01/2026" — when a transfer is settled the next day — is
+       not part of what it was. */
+    const tail=words.replace(/Value Date \d{2}\/\d{2}\/\d{4}/,"").trim();
     const desc=[...pending.parts,isRef(tail)?"":tail].join(" ").replace(/\s+/g," ").trim();
     rows.push({date:iso(dateFor(pending.day,pending.mon)),desc:desc||"(no description)",aud:amt,cur:"",orig:""});
     bal=now; pending=null;
@@ -1547,7 +1555,7 @@ function readCbaAccount(lines){
   if(!rows.length) return null;
   /* "Opening balance - Total debits + Total credits = Closing balance", then
      the four figures on the next line. */
-  const tot=/Total debits \+ Total credits = Closing balance\n\$ ?[\d,]+[. ]\d{2} (?:CR|DR) \$ ?([\d,]+[. ]\d{2}) \$ ?([\d,]+[. ]\d{2})/.exec(all);
+  const tot=/Total debits \+? ?Total credits = Closing balance\n\$? ?[\d,]+[. ]\d{2} (?:CR|DR) \$? ?([\d,]+[. ]\d{2}) \$? ?([\d,]+[. ]\d{2})/.exec(all);
   const charges =tot?cbaFig(tot[1]):null, payments=tot?cbaFig(tot[2]):null;
   const gotCh =r2(-rows.filter(r=>r.aud<0).reduce((s,r)=>s+r.aud,0));
   const gotPay=r2( rows.filter(r=>r.aud>0).reduce((s,r)=>s+r.aud,0));

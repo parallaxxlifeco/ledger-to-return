@@ -4,6 +4,18 @@ What was built, when, and what you'd need to know to change it. Newest first.
 
 ---
 
+## 2026-11-05 — Saver statements from August 2025 read again
+
+"How come I got this error when uploading these statements — some worked and others didn't?"
+
+- **Why:** from the August 2025 – January 2026 statement on, CommBank prints the Saver without "$" ("3,406.09 CR", not "$5,588.94 CR"); the reader needed the "$", so both 2026 statements were "not a statement this can read yet". The Feb–Jul 2025 one still had "$" and read fine.
+- Also handled, all in `readCbaAccount`: a balance of "0.00" with no CR and a closing balance of "Nil" (the account emptied in May 2026); "Value Date 09/01/2026" under a transfer, dropped from the description; the "+" missing from the totals line; "Statement 5 Page 2 of 3)" without its "(".
+- **A misread fixed on the way:** a payer reference ending in a digit right before the amount ("…ZO6D7 67.23") was read as $7.67 by the space-for-decimal match meant for 2026 card statements. Whole "1,234.56" figures are now taken first.
+- All seven of his files now read and balance to their printed totals: Feb–Jul 2025 (21 rows), Aug 2025–Jan 2026 (17), Feb–Jul 2026 (13). Copies of the same file in one batch are skipped as duplicates.
+- Test: added to `test/account.test.mjs` (invented figures).
+
+---
+
 ## 2026-11-05 — Always asks to connect Drive, and never loses either side
 
 "Can you build in that it automatically prompts connect to Drive so I never forget and keeps everything on file?"
