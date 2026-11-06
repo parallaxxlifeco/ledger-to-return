@@ -488,6 +488,19 @@ tr.grouprow td{
 }
 tr.subtotal td{font-weight:600;border-top:1px solid var(--line);background:var(--raise)}
 tr.subtotal td:first-child{background:var(--raise)}
+/* Each block of the sheet grid in its own pastel, the lines in alternating
+   light and lighter shades of it, the header and Total a step deeper — so a
+   row can be followed across twelve months by its colour. The colour is mixed
+   over the surface, so it holds in dark mode too. */
+table.grid tr.sec td{background:color-mix(in srgb,var(--g) 7%,var(--surface))}
+table.grid tr.sec.alt td{background:color-mix(in srgb,var(--g) 14%,var(--surface))}
+table.grid tr.sec:hover td{background:color-mix(in srgb,var(--g) 24%,var(--surface))}
+table.grid tr.grouprow.sec td{background:color-mix(in srgb,var(--g) 26%,var(--surface));cursor:pointer;user-select:none}
+table.grid tr.grouprow.sec td .caret{display:inline-block;width:14px;color:var(--ink3);transition:transform .15s}
+table.grid tr.grouprow.sec.closed td .caret{transform:rotate(-90deg)}
+table.grid tr.grouprow.sec td .gsum{float:right;font-family:var(--mono,monospace);letter-spacing:0;text-transform:none;font-weight:600;color:var(--ink2)}
+table.grid tr.subtotal.sec td{background:color-mix(in srgb,var(--g) 20%,var(--surface))}
+table.grid tr.sec.hide{display:none}
 .monthbtn{
   border:0;background:transparent;color:inherit;font:inherit;letter-spacing:inherit;text-transform:inherit;
   cursor:pointer;padding:2px 5px;border-radius:4px;
@@ -4135,27 +4148,51 @@ function gridData(sheetId,year){
   groups.sort((a,b)=>a.kind===b.kind?0:(a.kind==="income"?-1:1));
   return {groups,unsorted,otherYear,used:Object.keys(cells).length};
 }
+/* Which blocks of the sheet grids are closed — this viewer's choice, kept in
+   this browser only. */
+const GRID_KEY="l2r.gridClosed";
+const gridClosed=new Set((()=>{ try{ return JSON.parse(localStorage.getItem(GRID_KEY))||[]; }catch(e){ return []; } })());
+const saveGridClosed=()=>{ try{ localStorage.setItem(GRID_KEY,JSON.stringify([...gridClosed])); }catch(e){} };
+function wireGridBlocks(){
+  $$("#reportInner tr.grouprow[data-sec]").forEach(tr=>tr.addEventListener("click",()=>{
+    const sec=tr.dataset.sec, closed=!gridClosed.has(sec);
+    closed?gridClosed.add(sec):gridClosed.delete(sec); saveGridClosed();
+    tr.classList.toggle("closed",closed); tr.title=`Click to ${closed?"open":"close"} this block`;
+    $$("#reportInner tr[data-of]").forEach(r=>{ if(r.dataset.of===sec) r.classList.toggle("hide",closed); });
+  }));
+  const all=$("#gridAll"); if(all) all.addEventListener("click",()=>{
+    const secs=$$("#reportInner tr.grouprow[data-sec]").map(r=>r.dataset.sec);
+    const close=secs.some(x=>!gridClosed.has(x));
+    secs.forEach(x=>close?gridClosed.add(x):gridClosed.delete(x)); saveGridClosed();
+    const y=window.scrollY; renderReport(); window.scrollTo(0,y);
+  });
+}
 function gridTable(sheetId,year){
   const d=gridData(sheetId,year);
   let hidden=0;
   const head=`<thead><tr><th style="min-width:190px">Line</th>${
     MONTHS.map((m,i)=>`<th class="r"><button class="monthbtn" data-sheet="${sheetId}" data-m="${i}" title="Copy this month — every line in the block, empty ones included, so it lines up with your sheet">${m}</button></th>`).join("")
   }<th class="r">Year</th></tr></thead>`;
+  let shownSec=0;
   const body=d.groups.map(g=>{
     const shown=hideEmpty?g.items.filter(it=>it.months.some(v=>v)):g.items;
     hidden+=g.items.length-shown.length;
-    const rows=shown.map(it=>{
+    if(hideEmpty&&!shown.length) return "";
+    /* Each block its own colour, in order down the sheet; closed blocks keep
+       their header and Total. */
+    const sec=sheetId+"|"+g.kind+"|"+g.group, closed=gridClosed.has(sec);
+    const col=`--g:var(--cat${(shownSec++%8)+1})`;
+    const rows=shown.map((it,i)=>{
       const tot=it.months.reduce((a,b)=>a+b,0);
-      return `<tr${tot?"":' style="opacity:.45"'}><td>${esc(it.line.label)}</td>${
+      return `<tr class="sec${i%2?" alt":""}${closed?" hide":""}" data-of="${esc(sec)}" style="${col}${tot?"":";opacity:.45"}"><td>${esc(it.line.label)}</td>${
         it.months.map(v=>`<td class="r mono">${v?fmtAUD0(v):"·"}</td>`).join("")
       }<td class="r mono" style="font-weight:600">${tot?fmtAUD0(tot):"·"}</td></tr>`;
     }).join("");
     const sums=Array(12).fill(0);
     g.items.forEach(it=>it.months.forEach((v,i)=>sums[i]+=v));
     const gt=sums.reduce((a,b)=>a+b,0);
-    if(hideEmpty&&!shown.length) return "";
-    return `<tr class="grouprow" style="${gvar(g.group)}"><td colspan="14">${esc(g.group)} <span style="color:var(--ink3);font-weight:400">${g.kind}</span></td></tr>${rows}
-      <tr class="subtotal"><td>Total</td>${sums.map(v=>`<td class="r mono">${v?fmtAUD0(v):"·"}</td>`).join("")}<td class="r mono">${gt?fmtAUD0(gt):"·"}</td></tr>`;
+    return `<tr class="grouprow sec${closed?" closed":""}" data-sec="${esc(sec)}" style="${col}" title="Click to ${closed?"open":"close"} this block"><td colspan="14"><span class="caret">▾</span>${esc(g.group)} <span style="color:var(--ink3);font-weight:400">${g.kind}</span><span class="gsum">${shown.length} line${shown.length===1?"":"s"}</span></td></tr>${rows}
+      <tr class="subtotal sec" style="${col}"><td>Total</td>${sums.map(v=>`<td class="r mono">${v?fmtAUD0(v):"·"}</td>`).join("")}<td class="r mono">${gt?fmtAUD0(gt):"·"}</td></tr>`;
   }).join("");
   return {html:`<div class="tablewrap"><table class="grid">${head}<tbody>${body||`<tr><td colspan="14" class="hint">Nothing coded to this sheet for ${year} yet.</td></tr>`}</tbody></table></div>`,d,hidden};
 }
@@ -4458,6 +4495,7 @@ function renderSheetsReport(){
           <select id="gridYear" style="width:auto">${years.map(y=>`<option${y===year?" selected":""}>${y}</option>`).join("")}</select></div>
         <label class="hint" style="display:flex;align-items:center;gap:7px;padding-bottom:8px;cursor:pointer">
           <input type="checkbox" id="hideEmpty"${hideEmpty?" checked":""} style="width:auto"> Hide lines with nothing in them</label>
+        <button class="btn sm" id="gridAll" style="margin-bottom:6px" title="Close or open every block">Close / open all</button>
         <button class="btn sm" id="dlActuals" style="margin-bottom:6px" title="Both sheets, one row per line — the file the tracking sheet is built from">Download both sheets</button>
       </div>
     </div>
@@ -4474,6 +4512,7 @@ function renderSheetsReport(){
   wireRunning();
   $("#gridYear").addEventListener("change",e=>{S.gridYear=+e.target.value;markDirty();renderReport();});
   $("#hideEmpty").addEventListener("change",e=>{hideEmpty=e.target.checked;renderReport();});
+  wireGridBlocks();
   $("#dlActuals").addEventListener("click",()=>download(`monthly-actuals-${year}.csv`,actualsCsv(year)));
   $$("#reportInner [data-csv]").forEach(b=>b.addEventListener("click",()=>
     download(`${b.dataset.csv}-actuals-${year}.csv`,gridCsv(b.dataset.csv,year))));

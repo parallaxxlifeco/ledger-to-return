@@ -4,6 +4,17 @@ What was built, when, and what you'd need to know to change it. Newest first.
 
 ---
 
+## 2026-11-06 — Sheet grids: colour-coded blocks that open and close
+
+"Can we make each of these sections compress / expandable. Also colour code each of the sections … alternating lighter lines on the same pastel colour."
+
+- Every block in the Sheet actuals grids (GIVE IT ALL income, CIRCLES income, …) gets its own colour, in order down each sheet (`--cat1`…`--cat8`). The header is the deepest shade, the lines alternate light and lighter, the Total sits a step deeper; colours are mixed over the surface (`color-mix`), so dark mode works too. Hovering a line darkens it.
+- **Click a block's header** to close or open it. Closed blocks keep their header (with the line count) and Total. **Close / open all** sits next to "Hide lines with nothing in them".
+- Which blocks are closed is remembered in this browser only (`l2r.gridClosed`); copying a month still copies every line.
+- Test: `test/gridblocks.test.mjs`.
+
+---
+
 ## 2026-11-06 — History from his manual sheets
 
 "Can you back fill the data from the manual sheets into the app … and then use the monthly total for when records started to set the running total?"
