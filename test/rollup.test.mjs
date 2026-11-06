@@ -14,12 +14,12 @@ const BASE = process.env.BASE || 'http://localhost:8899/build';
 /* line label -> the May figure his sheet already carries */
 const MAY_GIA = {
   'Tickets': 1401.16, 'Speakers': 1238.49,
-  'Reconnected Man': 453.83, 'Founders Breakfast': 296.93,      // income
+  'Reconnected Groups': 453.83, 'Founders Breakfast': 296.93,      // income
   'VENUE': 492.62, 'EDITING': 1299.00, 'ADMIN / ASSISTANT': 108.43, 'LOGISTICS': 424.59,
 };
 const MAY_BUDGET_EXPECTED = {
   'GIA': {income: 2639.65, expense: 2216.21},
-  'Reconnected Man': {income: 453.83},
+  'Reconnected Groups': {income: 453.83},
   'Founders Breakfast': {income: 296.93, expense: 47.28},
   'VA Admin': {expense: 108.43},
 };
@@ -41,7 +41,7 @@ console.log(await p.evaluate(() => TRACKS.filter(t => t.rollsTo)
 await p.evaluate(may => {
   const rows = [
     ['Tickets','income'], ['Speakers','income'],
-    ['Reconnected Man','income'], ['Founders Breakfast','income'],
+    ['Reconnected Groups','income'], ['Founders Breakfast','income'],
     ['VENUE','expense'], ['EDITING','expense'], ['ADMIN / ASSISTANT','expense'],
     ['LOGISTICS','expense'], ['Founders Breakfast','expense'],
   ];

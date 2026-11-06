@@ -66,7 +66,7 @@ const lines = await p.evaluate(() => {
 });
 check('picking an expense category asks for a line', lines.out.mode === 'line');
 check('and offers no income lines',
-  !lines.out.labels.some(l => ['Tickets', 'Speakers', 'Partners', 'Reconnected Man'].includes(l)),
+  !lines.out.labels.some(l => ['Tickets', 'Speakers', 'Partners', 'Reconnected Groups'].includes(l)),
   `${lines.out.labels.length} lines, e.g. ${lines.out.labels.slice(0, 3).join(', ')}`);
 check('income offers Tickets', lines.in.labels.includes('Tickets'),
   `${lines.in.labels.length} lines`);

@@ -301,7 +301,7 @@ const prod = await p.evaluate(() => {
   };
 });
 const TK = 'gia:give-it-all:income:tickets', SP = 'gia:give-it-all:income:speakers',
-  FB = 'gia:circles:income:founders-breakfast', RM = 'gia:circles:income:reconnected-man';
+  FB = 'gia:circles:income:founders-breakfast', RM = 'gia:circles:income:reconnected-groups';
 check('GIVE IT ALL at any price goes on Tickets', prod.gia.length === 2 && prod.gia.every(t => t.line === TK && t.done && t.auto));
 check('Speaker goes on Speakers', prod.speaker.length === 1 && prod.speaker[0].line === SP);
 check('Founders Breakfast goes on Founders Breakfast', prod.fb.length === 1 && prod.fb[0].line === FB, JSON.stringify(prod.fb));
@@ -321,8 +321,8 @@ check('the standing answers show up as rules you can see', Object.values(prod.ru
 const kept2 = await p.evaluate(() => {
   const h = B().tx.find(t => t.mk === 'STRIPE SUBSCRIPTION · H@EXAMPLE.COM');
   go('sort'); filter = 'all'; curId = h.id; renderList();
-  ruleOn = true; choose('gia:circles:income:reconnected-man');
-  const both = B().tx.filter(t => t.mk === 'STRIPE SUBSCRIPTION · H@EXAMPLE.COM').every(t => t.line === 'gia:circles:income:reconnected-man');
+  ruleOn = true; choose('gia:circles:income:reconnected-groups');
+  const both = B().tx.filter(t => t.mk === 'STRIPE SUBSCRIPTION · H@EXAMPLE.COM').every(t => t.line === 'gia:circles:income:reconnected-groups');
   const other = B().tx.find(t => t.mk === 'STRIPE SUBSCRIPTION · I@EXAMPLE.COM').line;
   removeRule('STRIPE GIVE IT ALL - BALI', true);
   const reopened = B().tx.filter(t => t.mk === 'STRIPE GIVE IT ALL - BALI').every(t => !t.line && t.tax === 'x_income_reported' && t.kind === 'business');
@@ -342,7 +342,7 @@ check('and the next import does not bring the rule back', !kept2.ruleBack && !ke
 const merged = await p.evaluate(() => {
   /* For anyone who opened the build that had a Reconnected Woman line: their
      saved list has it, and something may already be coded to it. */
-  const W = 'gia:circles:income:reconnected-woman', M = 'gia:circles:income:reconnected-man';
+  const W = 'gia:circles:income:reconnected-woman', M = 'gia:circles:income:reconnected-groups';
   const at = TRACKS.findIndex(l => l.key === M);
   TRACKS.splice(at + 1, 0, {key: W, sheet: 'gia', group: 'CIRCLES', label: 'Reconnected Woman', kind: 'income', scope: 'business',
                             rollsTo: 'budget:transformations:income:reconnected-woman'});
@@ -357,8 +357,8 @@ const merged = await p.evaluate(() => {
           circles: TRACKS.filter(l => l.sheet === 'gia' && l.group === 'CIRCLES' && l.kind === 'income').map(l => l.label)};
 });
 check('a saved Reconnected Woman line folds into Reconnected Man — rows and rules move with it',
-  merged.row === 'gia:circles:income:reconnected-man' && merged.rule === 'gia:circles:income:reconnected-man' && merged.gone
-  && JSON.stringify(merged.circles) === JSON.stringify(['Reconnected Man', 'Founders Breakfast']), JSON.stringify(merged));
+  merged.row === 'gia:circles:income:reconnected-groups' && merged.rule === 'gia:circles:income:reconnected-groups' && merged.gone
+  && JSON.stringify(merged.circles) === JSON.stringify(['Reconnected Groups', 'Founders Breakfast']), JSON.stringify(merged));
 
 console.log(bad ? `\n${bad} CHECK(S) FAILED` : '\nStripe exports read and split correctly');
 console.log('PAGE ERRORS:', errs.length ? errs : 'none');

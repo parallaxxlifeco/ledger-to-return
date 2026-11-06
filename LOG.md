@@ -4,6 +4,14 @@ What was built, when, and what you'd need to know to change it. Newest first.
 
 ---
 
+## 2026-11-07 — Reconnected Groups; Other last
+
+- **"Reconnected Man" → "Reconnected Groups"** (it carries the men's and women's income), on both sheets. `RENAMED_LINES` renames a saved list on load, before the keys are checked, so `normaliseTrackKeys` moves rows, rules, learned links, roll-ups and sheet history to the new key (`…:reconnected-groups`). `LINE_ALIASES` maps the old key in a history file. Seed, `ROLLUP_SEED`, `MERGED_LINES` and the Stripe product rule (`STRIPE_LINES`, which now also matches "Reconnected Groups") point at the new key.
+- **"Other" goes to the bottom of its block** (`otherLast`) in the pick lists and the sheet grids, wherever it sits in the saved list.
+- Tests: `test/rename.test.mjs`; `stripe`, `rollup`, `direction` updated for the new name.
+
+---
+
 ## 2026-11-06 — Sheet grids: colour-coded blocks that open and close
 
 "Can we make each of these sections compress / expandable. Also colour code each of the sections … alternating lighter lines on the same pastel colour."

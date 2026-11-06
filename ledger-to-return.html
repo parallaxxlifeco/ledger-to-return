@@ -1036,7 +1036,7 @@ const SHEET_SEED=[
    {g:"GIVE IT ALL", kind:"income", lines:[
      ["Tickets"],["Speakers"],["Partners"]]},
    {g:"CIRCLES", kind:"income", lines:[
-     ["Reconnected Man"],["Founders Breakfast"]]},
+     ["Reconnected Groups"],["Founders Breakfast"]]},
    /* The GIA sheet prints the software lines too, but they are never used there
       — subscriptions are a Budget Tracker matter. What is left is what actually
       carries figures, and what the Budget Tracker roll-up depends on. */
@@ -1050,7 +1050,7 @@ const SHEET_SEED=[
      ["Brian McCafferty"],["Brian Balfe"],["Gary Moore"],
      ["Dennis"],["Christine"],["Beni Williams"],
      ["Vault"],["Silja"],["Jody"],["ProTrader"],
-     ["GIA"],["Reconnected Man"],["Founders Breakfast"],
+     ["GIA"],["Reconnected Groups"],["Founders Breakfast"],
      ["Contract/Misc"]]},
    {g:"PARALLAXX", kind:"income", lines:[
      ["Amazon AU"],["Amazon US"],["Shopify"]]},
@@ -1099,7 +1099,7 @@ const ROLLUP_SEED={
   "gia:give-it-all:income:tickets":              "budget:transformations:income:gia",
   "gia:give-it-all:income:speakers":             "budget:transformations:income:gia",
   "gia:give-it-all:income:partners":             "budget:transformations:income:gia",
-  "gia:circles:income:reconnected-man":          "budget:transformations:income:reconnected-man",
+  "gia:circles:income:reconnected-groups":       "budget:transformations:income:reconnected-groups",
   "gia:circles:income:founders-breakfast":       "budget:transformations:income:founders-breakfast",
   "gia:give-it-all:expense:venue":               "budget:transformations:expense:gia",
   "gia:give-it-all:expense:editing":             "budget:transformations:expense:gia",
@@ -1145,9 +1145,13 @@ const RETIRED_LINES=new Set([
    points at it is carried across. Where an old key was ambiguous — TRANSFORMATIONS
    had a GIA income line and a GIA expense line, both "budget:transformations:gia" —
    the amount's sign picks, which is the same rule resolveLine already uses. */
+const TRK_KIND_GUESS=k=>/:income:/.test(k)?"income":"expense";
 function normaliseTrackKeys(){
   const map={};                                   // old key -> {income, expense}
   let moved=0;
+  for(const l of TRACKS) if(l&&RENAMED_LINES[l.key]) l.label=RENAMED_LINES[l.key];
+  /* The same line twice after a rename (renamed, and also added fresh from
+     the seed): keep the first. */
   for(const l of TRACKS){
     if(!l||!l.sheet||!l.label) continue;
     if(!l.kind) l.kind=/income/i.test(String(l.group))?"income":"expense";
@@ -1180,6 +1184,9 @@ function normaliseTrackKeys(){
     if(v&&map[v]) S.lineFor[c]=pick(v,(CAT[c]&&CAT[c].kind!=="exclude")?CAT[c].kind:"expense")||v;
   }
   for(const l of TRACKS) if(l.rollsTo&&map[l.rollsTo]) l.rollsTo=pick(l.rollsTo,l.kind)||l.rollsTo;
+  if(S.history&&S.history.months) for(const h of Object.values(S.history.months)) for(const k of Object.keys(h.lines||{}))
+    if(map[k]){ const to=pick(k,TRK_KIND_GUESS(k)); if(to&&to!==k){ h.lines[to]=(h.lines[to]||0)+h.lines[k]; delete h.lines[k]; } }
+  const seen=new Set(); TRACKS=TRACKS.filter(l=>!seen.has(l.key)&&seen.add(l.key));
   indexTracks(); S.tracks=TRACKS;
   return moved;
 }
@@ -1215,8 +1222,22 @@ function addNewLines(){
    Reconnected Woman had a line of its own for a day; Daniel keeps the CIRCLES
    circle income as one line, "Reconnected Man", covering both circles. */
 const MERGED_LINES={
-  "gia:circles:income:reconnected-woman":"gia:circles:income:reconnected-man",
-  "budget:transformations:income:reconnected-woman":"budget:transformations:income:reconnected-man",
+  "gia:circles:income:reconnected-woman":"gia:circles:income:reconnected-groups",
+  "budget:transformations:income:reconnected-woman":"budget:transformations:income:reconnected-groups",
+};
+/* Lines renamed. "Reconnected Man" carried both the men's and the women's
+   income, so it is "Reconnected Groups" now. A line's key comes from its
+   label, so the rename runs before the keys are checked, and
+   normaliseTrackKeys moves every row, rule and learned link across. LINE_ALIASES
+   catches the old key anywhere else it turns up — a history file, a rule
+   saved elsewhere. */
+const RENAMED_LINES={
+  "gia:circles:income:reconnected-man":"Reconnected Groups",
+  "budget:transformations:income:reconnected-man":"Reconnected Groups",
+};
+const LINE_ALIASES={
+  "gia:circles:income:reconnected-man":"gia:circles:income:reconnected-groups",
+  "budget:transformations:income:reconnected-man":"budget:transformations:income:reconnected-groups",
 };
 function mergeLines(){
   let n=0;
@@ -1274,7 +1295,15 @@ function rollTarget(key){
   if(!t||!t.rollsTo||t.rollsTo===key) return null;
   return TRK[t.rollsTo]?t.rollsTo:null;
 }
-const linesFor=scope=>TRACKS.filter(t=>t.scope===scope);
+/* "Other" is the catch-all, so it sits at the bottom of its block — in the
+   pick lists and the sheet grids — wherever it was added. */
+const isOtherLine=l=>/^\s*other\s*$/i.test(l.label||"");
+function otherLast(lines){
+  const order=[], by=new Map();
+  for(const l of lines){ const g=l.kind+"|"+l.group+"|"+l.sheet; if(!by.has(g)){ by.set(g,[]); order.push(g); } by.get(g).push(l); }
+  return order.flatMap(g=>{ const a=by.get(g); return a.filter(l=>!isOtherLine(l)).concat(a.filter(isOtherLine)); });
+}
+const linesFor=scope=>otherLast(TRACKS.filter(t=>t.scope===scope));
 
 /* ---- one colour per block ----
    A pick list is forty near-identical rows, which is slow to read and easy to
@@ -1745,7 +1774,7 @@ const STRIPE_LINES=[
   [/^founders breakfast\b/i,  "gia:circles:income:founders-breakfast"],
   /* Both circles are one line: CIRCLES · Reconnected Man carries the Woman's
      circle too. */
-  [/reconnected (man|men|wom[ae]n)\b/i, "gia:circles:income:reconnected-man"],
+  [/reconnected (man|men|wom[ae]n|groups?)\b/i, "gia:circles:income:reconnected-groups"],
 ];
 function stripeLineFor(desc){
   const prod=stripeProduct(desc);
@@ -4097,7 +4126,7 @@ function reportData(){
 
 /* ---------------- monthly actuals grid ---------------- */
 function gridData(sheetId,year){
-  const lines=TRACKS.filter(t=>t.sheet===sheetId);
+  const lines=otherLast(TRACKS.filter(t=>t.sheet===sheetId));
   const cells={};
   let unsorted=0, otherYear=0;
   for(const t of B().tx){
@@ -4431,6 +4460,8 @@ function histPreview(){
 function readHistory(text){
   const h=JSON.parse(text);
   if(!h||h.kind!=="ledger-to-return-history"||!h.months||!/^\d{4}-\d{2}$/.test(h.through||"")||!h.open||!isFinite(+h.open.amount)) throw new Error("not a history file");
+  for(const m of Object.values(h.months)) for(const k of Object.keys(m.lines||{}))
+    if(LINE_ALIASES[k]){ const to=LINE_ALIASES[k]; m.lines[to]=(m.lines[to]||0)+m.lines[k]; delete m.lines[k]; }
   return h;
 }
 function wireHistory(){
