@@ -4,6 +4,19 @@ What was built, when, and what you'd need to know to change it. Newest first.
 
 ---
 
+## 2026-11-06 — Staying current, and one year selector
+
+"When I switch tabs it doesn't auto refresh the amount / view." / "I think it's a little confusing we have these both."
+
+- **Pages redraw when opened:** Import, Sort and Report are each drawn fresh from `go()`.
+- **Another browser tab:** a change saved in one tab arrives in the other straight away (the "storage" event), unless that tab has unsaved changes of its own (`adoptLocal`).
+- **Another device / Drive:** coming back to the tab (more than 15 s away) checks Drive's file time; if another device saved since, it loads through `reconcile`, so nothing unsaved here is lost (`refreshFromStore`).
+- **↻ in the top bar** does the same on demand: "Updated with the latest" / "Already up to date".
+- **One year selector:** the Report's own "Financial year" picker is gone; the one at the top of the page sets the year everywhere, and changing it now redraws the report too (it used to leave the report on the old year).
+- Test: `test/refresh.test.mjs` (two tabs, a stand-in for Drive).
+
+---
+
 ## 2026-11-05 — Sheet actuals summary: money in, out, result, running total, %
 
 "On the sheets actual I don't see the overall summary totals of total in, total out, difference, running total and the percentage change."

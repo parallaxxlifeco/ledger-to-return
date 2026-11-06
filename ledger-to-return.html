@@ -555,6 +555,7 @@ table.inner td,table.inner th{font-size:12px;padding:5px 8px}
       <div class="progbar"><span id="progFill"></span></div>
       <div class="progtxt" id="progTxt">0 / 0</div>
     </div>
+    <button class="btn sm" id="btnRefresh" title="Refresh — load the latest, from Drive or another tab">↻</button>
     <button class="btn sm" id="btnBackup">Backup</button>
     <button class="saveflag" id="saveFlag" title="Where your work is saved">starting…</button>
   </div>
@@ -3932,9 +3933,64 @@ function renderAccounts(){
 function go(p){
   $$(".stage").forEach(b=>b.setAttribute("aria-selected",String(b.dataset.pane===p)));
   $$(".pane").forEach(s=>s.classList.toggle("on",s.id==="pane-"+p));
+  /* Every page is drawn fresh when you open it, so what it shows is what's
+     there now. */
+  if(p==="import"){ renderAccounts(); renderStorage(); }
   if(p==="report") renderReport();
-  if(p==="sort") setTimeout(focusPick,60);
+  if(p==="sort"){ renderList(); setTimeout(focusPick,60); }
 }
+/* ---- staying current ----
+   The app can be open in two browser tabs, or on two devices through Drive.
+   A tab only knew what it had itself, so coming back to one showed old
+   figures. Now:
+   - another tab's change arrives at once (the browser's "storage" event), as
+     long as this tab has nothing unsaved of its own;
+   - coming back to the tab checks Drive, and loads it if another device saved
+     since — through reconcile, so nothing unsaved here is lost;
+   - ↻ in the top bar does the same check on demand. */
+let syncing=false, lastCheck=0;
+function redraw(){
+  renderAll();
+  const on=($(".pane.on")||{}).id;
+  if(on==="pane-report") renderReport();
+}
+function adoptLocal(raw){
+  const st=migrate(JSON.parse(raw)); if(!st) return false;
+  const keep=curId;
+  S=Object.assign(S,st); S.book="track";
+  if(Array.isArray(st.tracks)&&st.tracks.length){ TRACKS=st.tracks; indexTracks(); }
+  normaliseTrackKeys();
+  if(keep&&!B().tx.some(t=>t.id===keep)) curId=null;
+  return true;
+}
+async function refreshFromStore(manual){
+  if(syncing) return; syncing=true; lastCheck=Date.now();
+  let changed=false;
+  try{
+    if(Store&&Store.mode==="drive"&&!driveFailed){
+      if(dirty){ clearTimeout(saveTimer); await persist(); }
+      const f=await findDriveFile();
+      if(f&&f.modifiedTime!==lastRemoteAt){
+        const before=JSON.stringify(S.books);
+        const remote=await Store.load();
+        await reconcile(remote); mergeTaxBook();
+        changed=JSON.stringify(S.books)!==before;
+      }
+    }else if(!dirty){
+      let raw=null; try{ raw=localStorage.getItem(LSKEY); }catch(e){}
+      if(raw&&raw!==JSON.stringify({...S,tracks:TRACKS})){ changed=adoptLocal(raw); }
+    }
+  }catch(e){ console.warn("refresh failed",e); if(manual) toast("Couldn't reach Drive — try again in a moment"); }
+  redraw(); syncing=false;
+  if(manual&&!driveFailed) toast(changed?"Updated with the latest":"Already up to date");
+}
+window.addEventListener("storage",e=>{
+  if(e.key!==LSKEY||!e.newValue||dirty) return;
+  try{ if(adoptLocal(e.newValue)) redraw(); }catch(err){ console.warn(err); }
+});
+document.addEventListener("visibilitychange",()=>{
+  if(document.visibilityState==="visible"&&Date.now()-lastCheck>15000) refreshFromStore(false);
+});
 function switchBook(id){
   if(!S.books[id]||id===S.book) return;
   S.book=id; curId=null; filter="todo"; listQ=""; acctQ=""; resetPick();
@@ -3952,7 +4008,7 @@ function renderShell(){
   if(isTrack()){
     fyBox.innerHTML=`<select id="fyTop" title="Which year the tax report reads">${
       FY_LIST.map(f=>`<option value="${f.id}"${f.id===S.taxFy?" selected":""}>${f.label}</option>`).join("")}</select>`;
-    $("#fyTop").addEventListener("change",e=>{S.taxFy=e.target.value;markDirty();renderAll();});
+    $("#fyTop").addEventListener("change",e=>{S.taxFy=e.target.value;markDirty();redraw();});
   }else fyBox.textContent=activeFY().label;
   /* The keyboard legend used to sit under the filters. Every shortcut it listed
      is already printed on the thing it works: P/B/T/O on the four buttons, 1-9
@@ -4426,8 +4482,9 @@ function renderTaxReport(){
   })();
 
   const accts=[...new Set(bk.tx.map(t=>t.acct))].length;
-  const fySel=isTrack()?`<div class="field noprint" style="width:auto"><span class="lbl">Financial year</span>
-      <select id="fyPick" style="width:auto">${FY_LIST.map(f=>`<option value="${f.id}"${f.id===S.taxFy?" selected":""}>${f.label}</option>`).join("")}</select></div>`:"";
+  /* The year is chosen in one place only — the selector at the top of the page.
+     A second one here fell out of step with it. */
+  const fySel="";
 
   $("#reportInner").innerHTML=`
     <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:18px;flex-wrap:wrap;margin-bottom:20px">
@@ -4933,6 +4990,7 @@ document.addEventListener("keydown",e=>{
 });
 
 $("#driveBannerBtn").addEventListener("click",connectDriveNow);
+$("#btnRefresh").addEventListener("click",()=>refreshFromStore(true));
 $("#driveAskGo").addEventListener("click",connectDriveNow);
 $("#driveAskLater").addEventListener("click",()=>$("#driveAsk").close());
 /* backup + restore */
