@@ -4129,6 +4129,19 @@ function gridData(sheetId,year){
     if(onThis)    (cells[key]=cells[key]||Array(12).fill(0))[m]+=onLine(key);
     if(rollsHere) (cells[roll]=cells[roll]||Array(12).fill(0))[m]+=onLine(roll);
   }
+  /* Months his own sheets already cover come from them, whole: the Budget
+     Tracker as he kept it, line by line, in place of the partial rows loaded
+     here for the same months. */
+  const H=S.history;
+  if(H&&H.months&&sheetId==="budget"){
+    for(let m=0;m<12;m++){
+      const ym=year+"-"+String(m+1).padStart(2,"0");
+      if(ym>H.through) continue;
+      for(const k in cells) cells[k][m]=0;
+      const hm=H.months[ym]; if(!hm) continue;
+      for(const [k,v] of Object.entries(hm.lines||{})) if(TRK[k]) (cells[k]=cells[k]||Array(12).fill(0))[m]+=v;
+    }
+  }
   const groups=[];
   for(const l of lines){
     const gk=l.kind+"|"+l.group;
@@ -4277,10 +4290,12 @@ function renderReport(){
    line. In is what landed on income lines; out is what went on expense lines,
    less any refunds on them. The month's result is the difference. */
 function monthTotals(){
-  const m={};
+  const m={}, H=S.history&&S.history.months?S.history:null;
+  if(H) for(const [ym,h] of Object.entries(H.months)) if(ym<=H.through) m[ym]={in:h.in,out:h.out,net:Math.round((h.in-h.out)*100)/100,sheet:true};
   for(const t of B().tx){
     const k=lineOf(t);
     if(!k||!TRK[k]||!settled(t)) continue;
+    if(H&&t.date.slice(0,7)<=H.through) continue;    // that month comes from his sheets
     const e=enrich(t); if(e.aud==null) continue;
     const ym=t.date.slice(0,7), c=m[ym]||(m[ym]={in:0,out:0,net:0});
     if(TRK[k].kind==="income") c.in+=e.aud; else c.out-=e.aud;
@@ -4296,10 +4311,15 @@ const ymLabel=ym=>MONTHS[+ym.slice(5,7)-1]+" "+ym.slice(0,4);
    carried forward month by month to the latest data — and back, to the first
    month loaded here, by taking each month's result off again. */
 function runningSeries(){
-  const r=S.running; if(!r||!/^\d{4}-\d{2}$/.test(r.asOf||"")||!isFinite(+r.open)) return null;
+  /* With his sheet history loaded, the running total starts where his sheets
+     did — the figure carried into their first month — and runs forward from
+     there, sheets then this app. */
+  const H=S.history;
+  const r=H&&H.open?{open:H.open.amount,asOf:H.open.asOf}:S.running;
+  if(!r||!/^\d{4}-\d{2}$/.test(r.asOf||"")||!isFinite(+r.open)) return null;
   const res=monthResults();
-  const dates=B().tx.map(t=>t.date).sort();
-  const first=dates.length?dates[0].slice(0,7):r.asOf, last=dates.length?dates[dates.length-1].slice(0,7):r.asOf;
+  const dates=B().tx.map(t=>t.date.slice(0,7)).concat(H&&H.months?Object.keys(H.months):[]).sort();
+  const first=dates.length?(dates[0]<r.asOf?dates[0]:r.asOf):r.asOf, last=dates.length?dates[dates.length-1]:r.asOf;
   const series={[r.asOf]:{month:res[r.asOf]||0,run:+r.open}};
   let ym=r.asOf, run=+r.open;
   while(ym<last){ ym=ymAdd(ym,1); const m=res[ym]||0; run+=m; series[ym]={month:m,run}; }
@@ -4336,12 +4356,20 @@ function runningCard(year){
   const sum=f=>cells.reduce((a,c)=>a+(c.t?c.t[f]:0),0);
   const has=cells.some(c=>c.t);
   const row=(label,cellFn,year,cls)=>`<tr${cls?` class="${cls}"`:""}><td>${label}</td>${cells.map(cellFn).join("")}<td class="r mono" style="font-weight:600">${year}</td></tr>`;
+  const H=S.history&&S.history.months?S.history:null;
+  const hFirst=H?Object.keys(H.months).sort()[0]:null;
   const head=rs?`<div><span class="lbl">Running total</span>
         <div class="v mono" style="font-size:28px;font-weight:600;margin-top:2px">${fmt(rs.run)}</div>
-        <div class="hint" style="margin-top:2px">${word(rs.run)} · end of ${ymLabel(rs.last)}</div></div>`
+        <div class="hint" style="margin-top:2px">${word(rs.run)} · end of ${ymLabel(rs.last)}${H?` · your sheets ${ymLabel(hFirst)} – ${ymLabel(H.through)}, then this app`:""}</div></div>`
     :`<div><span class="lbl">${year} summary</span></div>`;
+  const controls=H
+    ? `<button class="btn sm noprint" id="histRemove" title="Take the history from your sheets out again">Remove sheet history</button>`
+    : `<div style="display:flex;flex-direction:column;gap:8px;align-items:flex-end">
+        <span><button class="btn sm noprint" id="histLoad" title="The months your own sheets cover, from the file Claude made from them">Load history from your sheets…</button>
+        <input type="file" id="histFile" accept=".json" style="display:none"></span>${setForm}</div>`;
   return `<div class="card runcard" style="margin-bottom:18px"><div class="body" style="display:flex;flex-direction:column;gap:12px">
-    <div style="display:flex;align-items:flex-end;gap:18px;flex-wrap:wrap">${head}<div class="spacer" style="flex:1"></div>${setForm}</div>
+    <div style="display:flex;align-items:flex-end;gap:18px;flex-wrap:wrap">${head}<div class="spacer" style="flex:1"></div>${controls}</div>
+    ${histPreview()}
     ${has?`<div class="tablewrap"><table class="grid"><thead><tr><th style="min-width:150px"></th>${MONTHS.map(m=>`<th class="r">${m}</th>`).join("")}<th class="r">Year</th></tr></thead><tbody>
       ${row("Money in",c=>`<td class="r mono">${c.t?money(c.t.in):"·"}</td>`,money(sum("in")))}
       ${row("Money out",c=>`<td class="r mono">${c.t?money(c.t.out):"·"}</td>`,money(sum("out")))}
@@ -4355,7 +4383,59 @@ function runningCard(year){
     </tbody></table></div>`:`<p class="hint" style="margin:0">Nothing sorted for ${year} yet.</p>`}
   </div></div>`;
 }
+/* ---- history from his own sheets ----
+   The months before this app's records come from the Budget Tracker he kept by
+   hand, as a file (kind "ledger-to-return-history") Claude made from it:
+   money in and out per month, each line's figure, the month it runs through,
+   and what was carried into its first month. It is shown first and only added
+   when he says so; Remove takes it out again. Kept in his data (S.history),
+   never in the code — the repo is public. */
+let pendingHist=null;
+function histPreview(){
+  const P=pendingHist; if(!P) return "";
+  const ms=Object.keys(P.months).sort();
+  let run=+P.open.amount;
+  const rows=ms.map(ym=>{ const h=P.months[ym], net=h.in-h.out; run+=net;
+    const f=v=>`${v<0?"−":""}$${Math.abs(v).toLocaleString("en-AU",{maximumFractionDigits:0})}`;
+    return `<tr><td>${ymLabel(ym)}</td><td class="r mono">${f(h.in)}</td><td class="r mono">${f(h.out)}</td><td class="r mono" style="color:${net<0?"var(--crit)":"var(--income)"}">${net<0?"":"+"}${f(net)}</td><td class="r mono" style="font-weight:600">${run<0?"":"+"}${f(run)}</td></tr>`; }).join("");
+  const folded=P.folded&&Object.keys(P.folded).length?`<p class="hint" style="margin:0">Lines your app doesn't have went on the nearest one: ${
+    Object.entries(P.folded).map(([a,b])=>`${esc(a)} → ${esc(b)}`).join(", ")}.</p>`:"";
+  return `<div class="flagbox warn" style="flex-direction:column;align-items:stretch;gap:10px">
+    <div class="ft">From ${esc(P.source||"your sheets")}: ${ymLabel(ms[0])} – ${ymLabel(P.through)}, starting from ${P.open.amount<0?"−":"+"}$${Math.abs(P.open.amount).toLocaleString("en-AU")} carried in</div>
+    <div class="tablewrap" style="max-height:320px;overflow:auto"><table class="grid"><thead><tr><th>Month</th><th class="r">In</th><th class="r">Out</th><th class="r">Result</th><th class="r">Running total</th></tr></thead><tbody>${rows}</tbody></table></div>
+    ${folded}
+    <p class="hint" style="margin:0">For these months your sheets replace what's loaded here; from ${ymLabel(ymAdd(P.through,1))} it's this app.</p>
+    <div style="display:flex;gap:8px"><button class="btn sm pri" id="histAdd">Add it</button><button class="btn sm" id="histCancel">Cancel</button></div>
+  </div>`;
+}
+function readHistory(text){
+  const h=JSON.parse(text);
+  if(!h||h.kind!=="ledger-to-return-history"||!h.months||!/^\d{4}-\d{2}$/.test(h.through||"")||!h.open||!isFinite(+h.open.amount)) throw new Error("not a history file");
+  return h;
+}
+function wireHistory(){
+  const L=$("#histLoad"), F=$("#histFile");
+  if(L&&F){
+    L.addEventListener("click",()=>F.click());
+    F.addEventListener("change",()=>{
+      const f=F.files[0]; if(!f) return;
+      const r=new FileReader();
+      r.onload=()=>{ try{ pendingHist=readHistory(r.result); renderReport(); }catch(e){ toast("That isn't a sheet history file"); } };
+      r.readAsText(f);
+    });
+  }
+  const A=$("#histAdd"); if(A) A.addEventListener("click",()=>{
+    S.history=pendingHist; pendingHist=null; markDirty(); renderReport();
+    toast("History from your sheets added — the running total now starts where they did");
+  });
+  const C=$("#histCancel"); if(C) C.addEventListener("click",()=>{ pendingHist=null; renderReport(); });
+  const R=$("#histRemove"); if(R) R.addEventListener("click",()=>{
+    if(!confirm("Take the history from your sheets out of the app? You can load it again from the file.")) return;
+    delete S.history; markDirty(); renderReport(); toast("Sheet history removed");
+  });
+}
 function wireRunning(){
+  wireHistory();
   const b=$("#runSave"); if(!b) return;
   b.addEventListener("click",()=>{
     const open=parseFloat($("#runOpen").value), asOf=$("#runAsOf").value;
@@ -4366,7 +4446,7 @@ function wireRunning(){
 }
 function renderSheetsReport(){
   const year=S.gridYear;
-  const years=[...new Set(B().tx.map(t=>+t.date.slice(0,4)))].sort();
+  const years=[...new Set(B().tx.map(t=>+t.date.slice(0,4)).concat(S.history&&S.history.months?Object.keys(S.history.months).map(k=>+k.slice(0,4)):[]))].sort();
   if(!years.length) years.push(year);
   if(!years.includes(year)) years.push(year), years.sort();
   let hiddenTotal=0;

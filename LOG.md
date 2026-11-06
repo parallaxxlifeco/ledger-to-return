@@ -4,6 +4,18 @@ What was built, when, and what you'd need to know to change it. Newest first.
 
 ---
 
+## 2026-11-06 — History from his manual sheets
+
+"Can you back fill the data from the manual sheets into the app … and then use the monthly total for when records started to set the running total?"
+
+- **The file:** `Ledger history from sheets.json`, in the "Claude Code" folder, NOT in this repo (it holds his figures; the repo is public). Made from the Budget Tracker's (24) and (25) INCOME DETAILED / EXPENSES sheets: every month Feb 2024 – Jun 2025 (the app's own records take over from July 2025, the start of FY 2025–26), money in and out, and each line's figure.
+- **How it was read:** the "ACT"/"ACTUAL"/"MAR2" columns; the second DEC ACT column for Dec 2025 isn't needed here. Expense blocks are SUBTOTAL(109…), which skips hidden rows, so hidden rows are skipped too; income blocks are SUM, so they're all counted. "Debt Carry Over" is left out. Every block matches the sheet's own total. Old lines the app doesn't have are put on the nearest: past clients → Contract/Misc, old subscriptions → Regular Subcriptions (listed in the preview).
+- **Starting point:** −$395, carried into February 2024 (the sheets' first month). Carried both ways that gives +$16,523 at end 2024 and +$17,961 at end of June 2025.
+- **In the app (`S.history`):** Report → Sheet actuals → **Load history from your sheets…** shows a preview (each month's in, out, result and running total) and only adds it on **Add it**. Then, for months up to `through`, the summary, the Budget Tracker grid and the running total come from the sheets (the partial rows loaded here for those months are left out of the figures, not deleted), and the running total starts from the sheets' opening figure, so the manual starting point isn't needed. **Remove sheet history** takes it out. The Year list includes 2024.
+- Test: `test/history.test.mjs` (invented figures).
+
+---
+
 ## 2026-11-06 — Staying current, and one year selector
 
 "When I switch tabs it doesn't auto refresh the amount / view." / "I think it's a little confusing we have these both."
