@@ -63,6 +63,18 @@ check('the card balances, money out 700, in 500', r.c.rec.ok && r.c.rec.charges 
 check('a row that breaks the running balance fails the check', r.brokenOk === false);
 check('card statements and account statements are not taken for listings', r.others.card === null && r.others.acct === null);
 check('it is one of the statement readers', r.readers.includes('cba-listing'));
+// A credit card's listing: no Balance column, and waived international fees as rows with no amount
+const NOBAL = ['Account Number xxxxxxxxxxxx4321', 'Page 1 of 1', 'Here’s your account information and a list of transactions from 10/10/26-31/10/26.',
+  'Account number xxxxxxxxxxxx4321', 'Account type Mastercard Example', 'Date Transaction details Amount',
+  '11 Oct 2026 SHOP EXAMPLE RAZLOG BGR -$21.22', '##1026 13.16 EURO NATL CURR UNI', '11 Oct 2026 INTNL TRANSACTION FEE', '$ 0.74 FEE SAVED',
+  '14 Oct 2026 TAQUERIA EXAMPLE TULUM -$55.43', '##1026 701.40 MEXICAN PESO', '14 Oct 2026 INTNL TRANSACTION FEE', '$ 1.94 FEE SAVED',
+  '20 Oct 2026 PAYMENT RECEIVED, THANK YOU $2,400.00', '30 Oct 2026 SOFTWARE EXAMPLE AUSTIN TX $24.46', '##1126 850.00 TURKISH LIRA', ...foot];
+const nb = await p.evaluate(lines => { const g = readCbaListing(lines); return {acct: g.acct, rec: g.rec, rows: g.rows}; }, NOBAL);
+check('a card listing with no Balance column is read', nb.acct === 'CommBank card 4321' && nb.rows.length === 4, JSON.stringify(nb.rows));
+check('waived fees ("FEE SAVED") are left out, signs as printed', JSON.stringify(nb.rows.map(x => x.aud)) === JSON.stringify([-21.22, -55.43, 2400, 24.46]), JSON.stringify(nb.rows.map(x => x.aud)));
+check('pesos and lira are named', nb.rows[1].cur === 'MXN' && nb.rows[3].cur === 'TRY', JSON.stringify(nb.rows.map(x => x.cur)));
+check('marked as read without a check, not as failing one', nb.rec.ok && nb.rec.unchecked, JSON.stringify(nb.rec));
+
 check('no page errors', errs.length === 0, errs.join(' | '));
 await b.close();
 console.log(bad ? `\n${bad} failed` : '\nall passed');

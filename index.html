@@ -1481,7 +1481,10 @@ const CBA_MON={Jan:0,Feb:1,Mar:2,Apr:3,May:4,Jun:5,Jul:6,Aug:7,Sep:8,Oct:9,Nov:1
 const CBA_CUR={"RUPIAH":"IDR","US DOLLAR":"USD","EURO":"EUR","NZ DOLLAR":"NZD",
   "POUND STERLING":"GBP","SINGAPORE DOLLAR":"SGD","THAI BAHT":"THB","JAPANESE YEN":"JPY",
   "HONG KONG DOLLAR":"HKD","CANADIAN DOLLAR":"CAD","SWISS FRANC":"CHF","UAE DIRHAM":"AED",
-  "MALAYSIAN RINGGIT":"MYR","INDIAN RUPEE":"INR","PHILIPPINE PESO":"PHP","VIETNAMESE DONG":"VND"};
+  "MALAYSIAN RINGGIT":"MYR","INDIAN RUPEE":"INR","PHILIPPINE PESO":"PHP","VIETNAMESE DONG":"VND",
+  "MEXICAN PESO":"MXN","TURKISH LIRA":"TRY","BULGARIAN LEV":"BGN","POLISH ZLOTY":"PLN","CZECH KORUNA":"CZK",
+  "HUNGARIAN FORINT":"HUF","DANISH KRONE":"DKK","SWEDISH KRONA":"SEK","NORWEGIAN KRONE":"NOK","KOREAN WON":"KRW",
+  "CHINESE YUAN":"CNY","SOUTH AFRICAN RAND":"ZAR","BRAZILIAN REAL":"BRL","COLOMBIAN PESO":"COP"};
 
 /* A charge line: "11 Jun  Crossfit Wanderlust Fi Badung  14.03". The amount is
    whatever decimal ends the line; a credit carries a TRAILING minus. */
@@ -1681,10 +1684,16 @@ function readCbaAccount(lines){
    far the balance moved. Listings can run newest first or oldest first. */
 const CBA_LIST_ROW=/^(\d{1,2}) (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) (\d{4}) (.*)$/;
 const CBA_LIST_TAIL=/(?:^|\s)(-?)\$([\d,]+[. ]\d{2})(?: ?(CR|DR))? +(-?)\$([\d,]+[. ]\d{2})(?: ?(CR|DR))?$/;
+/* A credit card's listing has no Balance column: the row ends at its amount.
+   A waived international fee is a row with no amount at all ("$ 0.74 FEE SAVED"
+   underneath), so it never closes and drops out. */
+const CBA_LIST_TAIL1=/(?:^|\s)(-?)\$([\d,]+[. ]\d{2})(?: ?(CR|DR))?$/;
 const CBA_LIST_SKIP=/^(Account Number\b|Page \d+ of \d+|Date Transaction details|Created \d|While this letter|we.re not responsible|Transaction Summary v)/i;
 function readCbaListing(lines){
   const all=lines.join("\n");
-  if(!/^Date Transaction details Amount Balance$/m.test(all)) return null;
+  const hdr=/^Date Transaction details Amount( Balance)?$/m.exec(all);
+  if(!hdr) return null;
+  const hasBal=!!hdr[1];
   const per=/transactions from (\d{2})\/(\d{2})\/(\d{2,4}) ?- ?(\d{2})\/(\d{2})\/(\d{2,4})/.exec(all);
   const yr=y=>y.length===2?2000+ +y:+y;
   const type=(/^Account type (.+)$/m.exec(all)||[])[1]||"";
@@ -1696,7 +1705,7 @@ function readCbaListing(lines){
   const r2=n=>Math.round(n*100)/100;
   const rows=[];let pend=null,open=false,afterRow=0;
   for(const line of lines){
-    if(/^Date Transaction details Amount Balance$/.test(line)){ open=true; afterRow=0; continue; }
+    if(/^Date Transaction details Amount( Balance)?$/.test(line)){ open=true; afterRow=0; continue; }
     if(!open) continue;
     if(/^Any pending transactions/.test(line)) break;
     if(CBA_LIST_SKIP.test(line)){ afterRow=0; continue; }
@@ -1704,10 +1713,10 @@ function readCbaListing(lines){
     let text=line;
     if(d){ pend={date:iso(new Date(+d[3],CBA_MON[d[2]],+d[1])),parts:[]}; text=d[4]; }
     if(pend){
-      const t=CBA_LIST_TAIL.exec(text);
+      const t=(hasBal?CBA_LIST_TAIL:CBA_LIST_TAIL1).exec(text);
       if(!t){ pend.parts.push(text); continue; }     // a long description wraps before the figures
       pend.parts.push(text.slice(0,t.index));
-      rows.push({date:pend.date,desc:pend.parts.join(" "),aud:fig(t[1],t[2],t[3]),bal:fig(t[4],t[5],t[6]),cur:"",orig:""});
+      rows.push({date:pend.date,desc:pend.parts.join(" "),aud:fig(t[1],t[2],t[3]),bal:hasBal?fig(t[4],t[5],t[6]):null,cur:"",orig:""});
       pend=null; afterRow=2; continue;
     }
     /* A line under a row belongs to it: the foreign amount on a card, or the
@@ -1725,16 +1734,16 @@ function readCbaListing(lines){
   for(const r of rows) r.desc=r.desc.replace(/Value Date \d{2}\/\d{2}\/\d{4}/,"").replace(/\s+/g," ").trim()||"(no description)";
   /* Oldest first, keeping the bank's order within a day. */
   if(rows.length>1&&rows[0].date>rows[rows.length-1].date) rows.reverse();
-  else if(rows.length>1&&rows[0].date===rows[rows.length-1].date&&Math.abs(r2(rows[0].bal-rows[1].bal)-rows[1].aud)>0.005) rows.reverse();
+  else if(hasBal&&rows.length>1&&rows[0].date===rows[rows.length-1].date&&Math.abs(r2(rows[0].bal-rows[1].bal)-rows[1].aud)>0.005) rows.reverse();
   let breaks=0;
-  for(let i=1;i<rows.length;i++) if(Math.abs(r2(rows[i-1].bal+rows[i].aud)-rows[i].bal)>0.005) breaks++;
+  if(hasBal) for(let i=1;i<rows.length;i++) if(Math.abs(r2(rows[i-1].bal+rows[i].aud)-rows[i].bal)>0.005) breaks++;
   const start=per?iso(new Date(yr(per[3]),+per[2]-1,+per[1])):(rows[0]||{}).date||"";
   const end  =per?iso(new Date(yr(per[6]),+per[5]-1,+per[4])):(rows[rows.length-1]||{}).date||"";
   const gotCh =r2(-rows.filter(r=>r.aud<0).reduce((s,r)=>s+r.aud,0));
   const gotPay=r2( rows.filter(r=>r.aud>0).reduce((s,r)=>s+r.aud,0));
   const rec={acct,period:start+" to "+end,n:rows.length,charges:gotCh,gotCh,payments:gotPay,gotPay,
-             opening:rows.length?r2(rows[0].bal-rows[0].aud):null,closing:rows.length?rows[rows.length-1].bal:null,
-             mismatch:breaks,ok:!breaks,zeros:0};
+             opening:hasBal&&rows.length?r2(rows[0].bal-rows[0].aud):null,closing:hasBal&&rows.length?rows[rows.length-1].bal:null,
+             mismatch:breaks,ok:!breaks,zeros:0,unchecked:!hasBal};
   return {acct,rows:rows.map(({bal,...r})=>r),rec};
 }
 
@@ -5371,12 +5380,13 @@ function showStatementReport(reports,failed,n){
       <td class="r mono">${r.charges==null?"—":fmtAUD(r.charges)}</td>
       <td class="r mono">${r.payments==null?"—":fmtAUD(r.payments)}</td>
       <td class="${r.ok?"":"r"}" style="color:${r.ok?"var(--income)":"var(--crit)"}">
-        ${r.ok?"balances":"DOES NOT BALANCE"}</td></tr>`).join("");
+        ${r.ok?(r.unchecked?`<span title="A card's transaction list prints no balance or totals, so there is nothing to check the rows against">read — no totals printed</span>`:"balances"):"DOES NOT BALANCE"}</td></tr>`).join("");
   box.innerHTML=`
     <div class="flagbox ${bad.length||failed.length?"crit":"ok"}"><div>
       <div class="ft">${n} row${n===1?"":"s"} read from ${reports.length} statement${reports.length===1?"":"s"}</div>
       <div class="fd">${bad.length
         ? "The totals below do not match what the statement says. Do not add these — send the file over and I'll look at it."
+        : reports.every(r=>r.unchecked)?"A card's transaction list prints no balance or totals, so there was nothing to check it against. Each row was read as printed; waived fees (\"FEE SAVED\") are left out."
         : "Each one was checked against its own printed totals — every row, and opening balance to closing balance."}</div>
     </div></div>
     ${reports.length?`<div class="tablewrap" style="margin-top:10px"><table>

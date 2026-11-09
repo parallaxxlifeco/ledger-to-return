@@ -4,6 +4,16 @@ What was built, when, and what you'd need to know to change it. Newest first.
 
 ---
 
+## 2026-11-10 — Card transaction listings (no Balance column)
+
+"Summary statement that can't be read yet" — NetBank's transaction list for his Mastercard, 10–31 Oct 2026.
+- A card's listing has no Balance column: "Date | Transaction details | Amount". `readCbaListing` now takes either header; without Balance a row ends at its amount (`CBA_LIST_TAIL1`). Waived international fees print as a row with no amount and "$ 0.74 FEE SAVED" underneath; they never close as a row, so they drop out.
+- With no balance and no totals there is nothing to check the rows against, so the import shows "read — no totals printed" instead of "balances" (`rec.unchecked`). Checked by hand on his file: 35 rows, net −$1,771.69, the same as summing the printed amounts.
+- More currency names for the "##" line: Mexican peso, Turkish lira, Bulgarian lev, Polish zloty and others (`CBA_CUR`).
+- Test: `test/listing.test.mjs` (a no-balance card listing added).
+
+---
+
 ## 2026-11-10 — Sheet actuals as Business and Personal; one Income / Expenses switch
 
 "When I switch to expenses / income on one tab make them both switch … Also move Transformations and Parallaxx to join the above with GIA so there becomes a clear distinction between business and personal."
