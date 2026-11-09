@@ -1047,9 +1047,7 @@ const SHEET_SEED=[
  ]},
  {id:"budget", name:"Budget Tracker", groups:[
    {g:"TRANSFORMATIONS", kind:"income", lines:[
-     ["Brian McCafferty"],["Brian Balfe"],["Gary Moore"],
-     ["Dennis"],["Christine"],["Beni Williams"],
-     ["Vault"],["Silja"],["Jody"],["ProTrader"],
+     ["Coaching Clients"],["Vault"],["ProTrader"],
      ["GIA"],["Reconnected Groups"],["Founders Breakfast"],
      ["Contract/Misc"]]},
    {g:"PARALLAXX", kind:"income", lines:[
@@ -1132,6 +1130,8 @@ const RETIRED_LINES=new Set([
   "budget:transformations:expense:klaviyo","budget:transformations:expense:misc-subcriptions",
   "budget:transformations:expense:typeform","budget:transformations:expense:adobe",
   "budget:transformations:expense:microsoft",
+  /* folded into Coaching Clients and GIA — see MERGED_LINES */
+  "budget:transformations:income:brian-mccafferty",  "budget:transformations:income:brian-balfe",  "budget:transformations:income:gary-moore",  "budget:transformations:income:dennis",  "budget:transformations:income:christine",  "budget:transformations:income:beni-williams",  "budget:transformations:income:silja",  "budget:transformations:income:jody",
   /* folded into Reconnected Man — see MERGED_LINES */
   "gia:circles:income:reconnected-woman","budget:transformations:income:reconnected-woman",
 ]);
@@ -1198,7 +1198,7 @@ function normaliseTrackKeys(){
    (every other line matched), so there was no "Other" under MISC PAYMENTS.
    Each key is put back once only — S.addedLines remembers it — so a line he
    deletes on purpose later stays deleted. */
-const ADDED_LINES=["budget:misc-payments:expense:other"];
+const ADDED_LINES=["budget:misc-payments:expense:other","budget:transformations:income:coaching-clients"];
 function addNewLines(){
   const seed=seedTracks();
   const done=new Set((S&&S.addedLines)||[]);
@@ -1224,6 +1224,16 @@ function addNewLines(){
 const MERGED_LINES={
   "gia:circles:income:reconnected-woman":"gia:circles:income:reconnected-groups",
   "budget:transformations:income:reconnected-woman":"budget:transformations:income:reconnected-groups",
+  /* Nov 2026: one-to-one clients are one line, "Coaching Clients", not a line
+     each; Jody's figures belong with GIA income. */
+  "budget:transformations:income:brian-mccafferty":"budget:transformations:income:coaching-clients",
+  "budget:transformations:income:brian-balfe":"budget:transformations:income:coaching-clients",
+  "budget:transformations:income:gary-moore":"budget:transformations:income:coaching-clients",
+  "budget:transformations:income:dennis":"budget:transformations:income:coaching-clients",
+  "budget:transformations:income:christine":"budget:transformations:income:coaching-clients",
+  "budget:transformations:income:beni-williams":"budget:transformations:income:coaching-clients",
+  "budget:transformations:income:silja":"budget:transformations:income:coaching-clients",
+  "budget:transformations:income:jody":"budget:transformations:income:gia",
 };
 /* Lines renamed. "Reconnected Man" carried both the men's and the women's
    income, so it is "Reconnected Groups" now. A line's key comes from its
@@ -1238,6 +1248,14 @@ const RENAMED_LINES={
 const LINE_ALIASES={
   "gia:circles:income:reconnected-man":"gia:circles:income:reconnected-groups",
   "budget:transformations:income:reconnected-man":"budget:transformations:income:reconnected-groups",
+  "budget:transformations:income:brian-mccafferty":"budget:transformations:income:coaching-clients",
+  "budget:transformations:income:brian-balfe":"budget:transformations:income:coaching-clients",
+  "budget:transformations:income:gary-moore":"budget:transformations:income:coaching-clients",
+  "budget:transformations:income:dennis":"budget:transformations:income:coaching-clients",
+  "budget:transformations:income:christine":"budget:transformations:income:coaching-clients",
+  "budget:transformations:income:beni-williams":"budget:transformations:income:coaching-clients",
+  "budget:transformations:income:silja":"budget:transformations:income:coaching-clients",
+  "budget:transformations:income:jody":"budget:transformations:income:gia",
 };
 function mergeLines(){
   let n=0;
@@ -1247,6 +1265,11 @@ function mergeLines(){
     for(const mk in b.rules||{}){ const r=b.rules[mk]; if(r&&MERGED_LINES[r.l]){ r.l=MERGED_LINES[r.l]; n++; } }
   }
   for(const c in (S.lineFor||{})) if(MERGED_LINES[S.lineFor[c]]) S.lineFor[c]=MERGED_LINES[S.lineFor[c]];
+  /* His sheet history, so older months fold the same way. */
+  const H=S.history;
+  if(H) for(const m of Object.values(H.months||{}).concat(Object.values(H.personal||{})))
+    for(const k of Object.keys(m.lines||{})) if(MERGED_LINES[k]){
+      const to=MERGED_LINES[k]; m.lines[to]=Math.round(((m.lines[to]||0)+m.lines[k])*100)/100; delete m.lines[k]; n++; }
   return n;
 }
 function pruneRetired(){

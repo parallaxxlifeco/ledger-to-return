@@ -4,6 +4,17 @@ What was built, when, and what you'd need to know to change it. Newest first.
 
 ---
 
+## 2026-11-10 — Coaching Clients: one line for one-to-one clients
+
+"In the tracker under Transformations, we have individual names — I want these to be folded into a single category of Coaching Clients." Jody "stays within GIA income"; ProTrader stays its own.
+
+- New Budget Tracker line **TRANSFORMATIONS · Coaching Clients** (income), first in the block. Brian McCafferty, Brian Balfe, Gary Moore, Dennis, Christine, Beni Williams and Silja fold into it; Jody folds into GIA. Vault, ProTrader, GIA, Reconnected Groups, Founders Breakfast and Contract/Misc are unchanged.
+- How: the seed has the new line; `ADDED_LINES` puts it into his saved list once; `MERGED_LINES` moves rows, rules and the learned category→line map, and now also his loaded sheet history (`S.history` months and personal), adding figures together; the old keys are in `RETIRED_LINES`, so they drop out once empty. `LINE_ALIASES` maps the old keys in any history file loaded later.
+- To add a client line back: put the name in the TRANSFORMATIONS income seed and take its key out of `MERGED_LINES`, `RETIRED_LINES` and `LINE_ALIASES`.
+- Test: `test/coaching.test.mjs`.
+
+---
+
 ## 2026-11-10 — CommBank transaction listings (bulk, any date range)
 
 "It cannot read this format — can you build it in." (NetBank's "Transaction Summary" PDF, 01/07/26–31/10/26.)
