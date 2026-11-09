@@ -4,6 +4,19 @@ What was built, when, and what you'd need to know to change it. Newest first.
 
 ---
 
+## 2026-11-10 — CommBank transaction listings (bulk, any date range)
+
+"It cannot read this format — can you build it in." (NetBank's "Transaction Summary" PDF, 01/07/26–31/10/26.)
+
+- New reader `readCbaListing`, tried after the card and account statement readers. It reads the letter-style listing NetBank produces for any date range on any account: "Date | Transaction details | Amount | Balance", one row per line with the full date, a signed amount and the balance after it.
+- A payer's reference on the next line is dropped (so rules still match); a card's foreign amount ("##1026 150,000.00 RUPIAH") is kept with its row; a description that wraps before its figures is joined. Page footers and the repeated header on later pages are skipped.
+- Account: "Account type NetBank Saver" + last four of the account number → "CommBank NetBank Saver 1986", the same name as the Saver statements; a card type (Mastercard, Visa, credit) → "CommBank card ####".
+- No printed totals, so the check is the running balance: every row's amount must be exactly how far the balance moved. Newest-first listings are put oldest-first.
+- Assumed for card listings (not yet seen): debits print "-$12.34", balances can be "-$…". If a real card listing fails the check, look here first.
+- Test: `test/listing.test.mjs` (invented figures).
+
+---
+
 ## 2026-11-09 — Personal spending comes from his sheet
 
 "Personal expenses don't need bank transactions. Usually I just deduct it from what Luiza owes me … So if it's in the sheet, just take it from there. Only business expenses should really have transaction lines."

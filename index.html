@@ -1613,9 +1613,77 @@ function readCbaAccount(lines){
   return {acct,rows,rec};
 }
 
+/* ---- CommBank transaction listing ("Transaction Summary") ----
+   What NetBank gives you for any date range, on any account — a letter, then
+   "Date | Transaction details | Amount | Balance". One file can cover months,
+   so it is the bulk way in. Each row is on one line with the full date, the
+   signed amount and the balance after it; a payer's reference or a card's
+   foreign amount can follow on the next line. There are no printed totals, so
+   the check is the running balance: every row's amount has to be exactly how
+   far the balance moved. Listings can run newest first or oldest first. */
+const CBA_LIST_ROW=/^(\d{1,2}) (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) (\d{4}) (.*)$/;
+const CBA_LIST_TAIL=/(?:^|\s)(-?)\$([\d,]+[. ]\d{2})(?: ?(CR|DR))? +(-?)\$([\d,]+[. ]\d{2})(?: ?(CR|DR))?$/;
+const CBA_LIST_SKIP=/^(Account Number\b|Page \d+ of \d+|Date Transaction details|Created \d|While this letter|we.re not responsible|Transaction Summary v)/i;
+function readCbaListing(lines){
+  const all=lines.join("\n");
+  if(!/^Date Transaction details Amount Balance$/m.test(all)) return null;
+  const per=/transactions from (\d{2})\/(\d{2})\/(\d{2,4}) ?- ?(\d{2})\/(\d{2})\/(\d{2,4})/.exec(all);
+  const yr=y=>y.length===2?2000+ +y:+y;
+  const type=(/^Account type (.+)$/m.exec(all)||[])[1]||"";
+  const num4=((/^Account number ([\dx* ]+)$/mi.exec(all)||/Account Number ([\d ]+)/.exec(all)||[])[1]||"").replace(/\D/g,"").slice(-4);
+  const acct=/card|mastercard|visa|amex|credit/i.test(type)
+    ? "CommBank card "+num4
+    : "CommBank "+(type.trim()||"account")+(num4?" "+num4:"");
+  const fig=(sign,v,cd)=>{ const n=cbaFig(v); return sign==="-"||cd==="DR"?-n:n; };
+  const r2=n=>Math.round(n*100)/100;
+  const rows=[];let pend=null,open=false,afterRow=0;
+  for(const line of lines){
+    if(/^Date Transaction details Amount Balance$/.test(line)){ open=true; afterRow=0; continue; }
+    if(!open) continue;
+    if(/^Any pending transactions/.test(line)) break;
+    if(CBA_LIST_SKIP.test(line)){ afterRow=0; continue; }
+    const d=CBA_LIST_ROW.exec(line);
+    let text=line;
+    if(d){ pend={date:iso(new Date(+d[3],CBA_MON[d[2]],+d[1])),parts:[]}; text=d[4]; }
+    if(pend){
+      const t=CBA_LIST_TAIL.exec(text);
+      if(!t){ pend.parts.push(text); continue; }     // a long description wraps before the figures
+      pend.parts.push(text.slice(0,t.index));
+      rows.push({date:pend.date,desc:pend.parts.join(" "),aud:fig(t[1],t[2],t[3]),bal:fig(t[4],t[5],t[6]),cur:"",orig:""});
+      pend=null; afterRow=2; continue;
+    }
+    /* A line under a row belongs to it: the foreign amount on a card, or the
+       payer's reference — which is different every time and is dropped, so a
+       rule can still match the payer. */
+    if(afterRow&&rows.length){
+      afterRow--;
+      const last=rows[rows.length-1], f=CBA_FX.exec(line);
+      if(f){ const name=f[3].trim(), key=Object.keys(CBA_CUR).find(k=>name===k||name.startsWith(k+" "));
+        last.cur=key?CBA_CUR[key]:name; last.orig=cbaNum(f[1],f[2]); continue; }
+      if(/^[A-Z0-9]{12,}$/.test(line.trim())) continue;
+      last.desc+=" "+line;
+    }
+  }
+  for(const r of rows) r.desc=r.desc.replace(/Value Date \d{2}\/\d{2}\/\d{4}/,"").replace(/\s+/g," ").trim()||"(no description)";
+  /* Oldest first, keeping the bank's order within a day. */
+  if(rows.length>1&&rows[0].date>rows[rows.length-1].date) rows.reverse();
+  else if(rows.length>1&&rows[0].date===rows[rows.length-1].date&&Math.abs(r2(rows[0].bal-rows[1].bal)-rows[1].aud)>0.005) rows.reverse();
+  let breaks=0;
+  for(let i=1;i<rows.length;i++) if(Math.abs(r2(rows[i-1].bal+rows[i].aud)-rows[i].bal)>0.005) breaks++;
+  const start=per?iso(new Date(yr(per[3]),+per[2]-1,+per[1])):(rows[0]||{}).date||"";
+  const end  =per?iso(new Date(yr(per[6]),+per[5]-1,+per[4])):(rows[rows.length-1]||{}).date||"";
+  const gotCh =r2(-rows.filter(r=>r.aud<0).reduce((s,r)=>s+r.aud,0));
+  const gotPay=r2( rows.filter(r=>r.aud>0).reduce((s,r)=>s+r.aud,0));
+  const rec={acct,period:start+" to "+end,n:rows.length,charges:gotCh,gotCh,payments:gotPay,gotPay,
+             opening:rows.length?r2(rows[0].bal-rows[0].aud):null,closing:rows.length?rows[rows.length-1].bal:null,
+             mismatch:breaks,ok:!breaks,zeros:0};
+  return {acct,rows:rows.map(({bal,...r})=>r),rec};
+}
+
 const STATEMENT_READERS=[
   {id:"cba-card",label:"CommBank credit card",read:readCbaCard},
   {id:"cba-account",label:"CommBank bank account",read:readCbaAccount},
+  {id:"cba-listing",label:"CommBank transaction listing",read:readCbaListing},
 ];
 
 async function readStatement(file){
