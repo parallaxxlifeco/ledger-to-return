@@ -4,6 +4,18 @@ What was built, when, and what you'd need to know to change it. Newest first.
 
 ---
 
+## 2026-11-10 — Identical rows on one statement; income and expenses apart on Sheet actuals
+
+**Two identical rows are two transactions.** "They should be side by side, same amount" — two Lufthansa tickets, same day, same price, same description. The importer took the second for a duplicate of the first and skipped it ($1,538 missing).
+- `importPlan` now numbers identical rows within an import (`occ`) and skips only as many as are already loaded (`knownIds(...).count`, by content key; a split counts once). The second twin gets its own id (`txId(t, occ)` adds `|#2`). Loading the same file again still adds nothing; loading it over data that has only one of the pair adds the missing one.
+- Statements dropped in together can overlap, so `takeStatements` merges them with `mergeStatementRows`: an identical row is taken as many times as the file holding the most of it has it.
+- `test/twins.test.mjs`; `test/accounts.test.mjs` updated (its sample has two identical $430 rows, which now both load).
+
+**Sheet actuals: income and expenses as separate tables.** "Income and expenses stacked on each other … when I had them in my own sheets they were separate." Then: "a little gap between [sections] … and the totals line more unique."
+- `gridTable` builds two tables per sheet, Income then Expenses, each titled with its year total and ending in a solid Total income (green) / Total expenses (red) row. A gap row separates blocks; each block's Total is bold with a deeper shade and a rule in the block's colour above it. A part with nothing in it (with "Hide lines with nothing in them" on) is left out.
+
+---
+
 ## 2026-11-10 — Answer several rows at once
 
 "Can we build an option for me to select multiple transactions to file them all the same way — e.g. select 10 for Personal, Restaurants."

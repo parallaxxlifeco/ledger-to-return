@@ -28,21 +28,21 @@ const imp = async acct => p.evaluate(([text, acct]) => {
 
 await p.evaluate(() => { S.book = 'track'; B().tx = []; B().rules = {}; });
 const first = await imp('CommBank NetBank Saver 1986');
-check('first import goes in', first.n === 2, `${first.n} rows`);
+check('first import goes in — both identical $430 rows are kept (two transactions)', first.n === 3, `${first.n} rows`);
 const again = await imp('Parallaxx Income');
-check('the same statement under a different account name is caught', again.n === 2 && /3 already loaded/.test(again.note), `${again.n} rows · ${again.note}`);
+check('the same statement under a different account name is caught', again.n === 3 && /3 already loaded/.test(again.note), `${again.n} rows · ${again.note}`);
 
 const ren = await p.evaluate(() => { renderAll(); document.querySelector('[data-ren="CommBank NetBank Saver 1986"]').click();
   return [...new Set(B().tx.map(t => t.acct))]; });
 check('Rename moves every row to the new name', JSON.stringify(ren) === JSON.stringify(['Parallaxx Income']), JSON.stringify(ren));
 const third = await imp('CommBank NetBank Saver 1986');
-check('and a later import under the old name is still caught', third.n === 2, `${third.n}`);
+check('and a later import under the old name is still caught', third.n === 3, `${third.n}`);
 
 const del = await p.evaluate(() => {
   B().tx.push(normTx({id: 'x', date: '2025-08-01', desc: 'Other', amt: -1, cur: 'AUD', acct: 'spare', mk: 'OTHER'}, true));
   renderAll(); document.querySelector('[data-del="spare"]').click(); return B().tx.map(t => t.acct);
 });
-check('Remove takes out one account and nothing else', del.length === 2 && del.every(a => a === 'Parallaxx Income'), JSON.stringify(del));
+check('Remove takes out one account and nothing else', del.length === 3 && del.every(a => a === 'Parallaxx Income'), JSON.stringify(del));
 
 const stripe = await p.evaluate(() => {
   const k = new Set();

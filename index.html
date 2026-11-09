@@ -534,6 +534,20 @@ table.grid tr.grouprow.sec.closed td .caret{transform:rotate(-90deg)}
 table.grid tr.grouprow.sec td .gsum{float:right;font-family:var(--mono,monospace);letter-spacing:0;text-transform:none;font-weight:600;color:var(--ink2)}
 table.grid tr.subtotal.sec td{background:color-mix(in srgb,var(--g) 20%,var(--surface))}
 table.grid tr.sec.hide{display:none}
+/* Income and expenses each in a table of their own, a gap between blocks,
+   and Totals that stand apart from the lines above them. */
+.gridpart{margin-top:14px}
+.gridpart+.gridpart{margin-top:26px}
+.gridtitle{display:flex;align-items:baseline;gap:10px;margin:0 0 6px;font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
+.gridtitle b{font-size:13px;letter-spacing:0}
+.gridpart.income .gridtitle{color:var(--income)}
+.gridpart.expense .gridtitle{color:var(--crit)}
+table.grid tr.gap td{height:14px;padding:0;background:var(--surface)!important;border:0}
+table.grid tr.subtotal.sec td{font-weight:700;color:var(--ink);border-top:2px solid var(--g);border-bottom:1px solid var(--g);
+  background:color-mix(in srgb,var(--g) 32%,var(--surface))}
+table.grid tr.grandtotal td{font-weight:700;font-size:12.5px;color:var(--surface);border-top:2px solid var(--ink);padding-top:8px;padding-bottom:8px}
+table.grid tr.grandtotal.income td{background:var(--income)}
+table.grid tr.grandtotal.expense td{background:var(--crit)}
 .monthbtn{
   border:0;background:transparent;color:inherit;font:inherit;letter-spacing:inherit;text-transform:inherit;
   cursor:pointer;padding:2px 5px;border-radius:4px;
@@ -2513,9 +2527,15 @@ function renderPreview(){
 /* Every id already loaded — including the originals of rows that were split,
    so importing the same statement again doesn't bring the whole amount back. */
 function knownIds(bk){
-  const s=new Set();
+  const s=new Set(); s.count=new Map();
   for(const t of bk.tx){
     s.add(t.id); if(t.split&&t.split.of) s.add(t.split.of);
+    /* How many of each are loaded, so a second identical row on a statement —
+       two plane tickets, same flight, same price — is not taken for the first.
+       A split counts once, by its first part. */
+    if(!t.ref&&(!t.split||t.split.part===1)){
+      const k=contentKey(t.split?{...t,amt:t.split.amt}:t); s.count.set(k,(s.count.get(k)||0)+1);
+    }
     /* And what it is — date, amount, description — whatever account it was
        filed under. His Saver statement went in three times under three names,
        and the id (which includes the account name) never matched. Stripe rows
@@ -2527,6 +2547,9 @@ function knownIds(bk){
 }
 const contentKey=t=>"c|"+t.date+"|"+Math.round(t.amt*100)+"|"+String(t.desc||"").slice(0,40).toLowerCase();
 const isKnown=(known,t)=>known.has(txId(t))||(!t.ref&&known.has(contentKey(t)));
+/* The n-th identical row in an import is loaded only if fewer than n are in
+   already. */
+const knownCount=(known,t)=>t.ref?(known.has(txId(t))?Infinity:0):(known.count.get(contentKey(t))||0);
 /* ---- the same transaction from two statements ----
    One card can come in twice in two shapes: the PDF statement and NetBank's
    export write the same purchase as "Merc Lounge Badung Kab" and
@@ -2551,16 +2574,24 @@ function loosePool(bk){
 }
 /* What an import will do with each row: add it, or skip it as already loaded
    — exactly, or as the same transaction from another statement. */
+/* Two identical rows in one file are two transactions: the second of two
+   tickets bought together used to be skipped as "already loaded", because it
+   had the same date, amount and description as the first. Now each identical
+   row is numbered (occ), and only as many as are already loaded are skipped.
+   Statements loaded together that overlap are trimmed before this — see
+   mergeStatementRows. */
 function importPlan(out,bk){
-  const known=knownIds(bk), pool=loosePool(bk), seen=new Set();
-  return out.map(t=>{
+  const known=knownIds(bk), pool=loosePool(bk), n=new Map(), occ=[];
+  const plan=out.map(t=>{
+    const ck=t.ref?"r|"+t.ref:contentKey(t), i=(n.get(ck)||0)+1; n.set(ck,i); occ.push(i);
     const lk=!t.ref&&t.src!=="stripe"?looseKey(t):null;
     const take=()=>{ if(lk&&pool.get(lk)>0){ pool.set(lk,pool.get(lk)-1); return true; } return false; };
-    if(isKnown(known,t)||seen.has(txId(t))){ take(); return "known"; }
+    if(i<=knownCount(known,t)){ take(); return "known"; }
     if(take()) return "overlap";
-    seen.add(txId(t));
     return "add";
   });
+  plan.occ=occ;
+  return plan;
 }
 /* Duplicates already loaded: rows on the same loose key in more than one
    account. Grouped by the set of accounts they sit in, so a statement loaded
@@ -2611,9 +2642,9 @@ function removeOverlaps(g,keep){
   markDirty(); renderAll();
   toast(`${n} duplicate${n===1?"":"s"} removed — kept the ones in “${keep}”`);
 }
-function txId(t){
+function txId(t,occ){
   if(t.ref) return hashId("ref|"+t.ref);
-  return hashId([t.date,t.cur,t.amt,t.acct,t.desc.slice(0,40)].join("|"));
+  return hashId([t.date,t.cur,t.amt,t.acct,t.desc.slice(0,40)].join("|")+(occ>1?"|#"+occ:""));
 }
 /* What a Stripe row already says about itself. Stripe labels its own fees and
    payouts, so those are answered here; a sale is known to be income the ATO
@@ -2667,8 +2698,9 @@ function addRows(out){
   let added=0,auto=0,fromStripe=0,seeded=0,stripeSales=0;
   const overlapped=plan.filter(x=>x==="overlap").length;
   for(const [i,t] of out.entries()){
-    const id=txId(t);
     if(plan[i]!=="add") continue;
+    let id=txId(t,plan.occ[i]);
+    for(let k=plan.occ[i]+1;bk.tx.some(x=>x.id===id);k++) id=txId(t,k);   // never two rows with one id
     const mk=t.mk||merchantKey(t.desc);
     const rule=bk.rules[mk];
     const rec={...t,id,mk,cat:null,auto:false};
@@ -4387,32 +4419,46 @@ function wireGridBlocks(){
 }
 function gridTable(sheetId,year){
   const d=gridData(sheetId,year);
-  let hidden=0;
+  let hidden=0, shownSec=0;
   const head=`<thead><tr><th style="min-width:190px">Line</th>${
     MONTHS.map((m,i)=>`<th class="r"><button class="monthbtn" data-sheet="${sheetId}" data-m="${i}" title="Copy this month — every line in the block, empty ones included, so it lines up with your sheet">${m}</button></th>`).join("")
   }<th class="r">Year</th></tr></thead>`;
-  let shownSec=0;
-  const body=d.groups.map(g=>{
-    const shown=hideEmpty?g.items.filter(it=>it.months.some(v=>v)):g.items;
-    hidden+=g.items.length-shown.length;
-    if(hideEmpty&&!shown.length) return "";
-    /* Each block its own colour, in order down the sheet; closed blocks keep
-       their header and Total. */
-    const sec=sheetId+"|"+g.kind+"|"+g.group, closed=gridClosed.has(sec);
-    const col=`--g:var(--cat${(shownSec++%8)+1})`;
-    const rows=shown.map((it,i)=>{
-      const tot=it.months.reduce((a,b)=>a+b,0);
-      return `<tr class="sec${i%2?" alt":""}${closed?" hide":""}" data-of="${esc(sec)}" style="${col}${tot?"":";opacity:.45"}"><td>${esc(it.line.label)}</td>${
-        it.months.map(v=>`<td class="r mono">${v?fmtAUD0(v):"·"}</td>`).join("")
-      }<td class="r mono" style="font-weight:600">${tot?fmtAUD0(tot):"·"}</td></tr>`;
+  const cells=(arr,fmt)=>arr.map(v=>`<td class="r mono">${v?fmt(v):"·"}</td>`).join("");
+  /* Income and expenses as two tables, the way his own sheets keep them —
+     never one running into the other. Within each, a gap between blocks, and
+     each block's Total stands apart from its lines. */
+  const table=(kind,groups)=>{
+    let first=true;
+    const all=Array(12).fill(0);
+    const body=groups.map(g=>{
+      const shown=hideEmpty?g.items.filter(it=>it.months.some(v=>v)):g.items;
+      hidden+=g.items.length-shown.length;
+      const sums=Array(12).fill(0);
+      g.items.forEach(it=>it.months.forEach((v,i)=>{ sums[i]+=v; all[i]+=v; }));
+      if(hideEmpty&&!shown.length) return "";
+      /* Each block its own colour, in order down the sheet; closed blocks keep
+         their header and Total. */
+      const sec=sheetId+"|"+g.kind+"|"+g.group, closed=gridClosed.has(sec);
+      const col=`--g:var(--cat${(shownSec++%8)+1})`;
+      const rows=shown.map((it,i)=>{
+        const tot=it.months.reduce((a,b)=>a+b,0);
+        return `<tr class="sec${i%2?" alt":""}${closed?" hide":""}" data-of="${esc(sec)}" style="${col}${tot?"":";opacity:.45"}"><td>${esc(it.line.label)}</td>${
+          cells(it.months,fmtAUD0)}<td class="r mono" style="font-weight:600">${tot?fmtAUD0(tot):"·"}</td></tr>`;
+      }).join("");
+      const gt=sums.reduce((a,b)=>a+b,0);
+      const gap=first?"":`<tr class="gap"><td colspan="14"></td></tr>`; first=false;
+      return `${gap}<tr class="grouprow sec${closed?" closed":""}" data-sec="${esc(sec)}" style="${col}" title="Click to ${closed?"open":"close"} this block"><td colspan="14"><span class="caret">▾</span>${esc(g.group)}<span class="gsum">${shown.length} line${shown.length===1?"":"s"}</span></td></tr>${rows}
+        <tr class="subtotal sec" style="${col}"><td>Total ${esc(g.group.toLowerCase())}</td>${cells(sums,fmtAUD0)}<td class="r mono">${gt?fmtAUD0(gt):"·"}</td></tr>`;
     }).join("");
-    const sums=Array(12).fill(0);
-    g.items.forEach(it=>it.months.forEach((v,i)=>sums[i]+=v));
-    const gt=sums.reduce((a,b)=>a+b,0);
-    return `<tr class="grouprow sec${closed?" closed":""}" data-sec="${esc(sec)}" style="${col}" title="Click to ${closed?"open":"close"} this block"><td colspan="14"><span class="caret">▾</span>${esc(g.group)} <span style="color:var(--ink3);font-weight:400">${g.kind}</span><span class="gsum">${shown.length} line${shown.length===1?"":"s"}</span></td></tr>${rows}
-      <tr class="subtotal sec" style="${col}"><td>Total</td>${sums.map(v=>`<td class="r mono">${v?fmtAUD0(v):"·"}</td>`).join("")}<td class="r mono">${gt?fmtAUD0(gt):"·"}</td></tr>`;
-  }).join("");
-  return {html:`<div class="tablewrap"><table class="grid">${head}<tbody>${body||`<tr><td colspan="14" class="hint">Nothing coded to this sheet for ${year} yet.</td></tr>`}</tbody></table></div>`,d,hidden};
+    if(!groups.length||!body.trim()) return "";      // every block hidden as empty
+    const grand=all.reduce((a,b)=>a+b,0);
+    const word=kind==="income"?"income":"expenses";
+    return `<div class="gridpart ${kind}"><div class="gridtitle"><span>${kind==="income"?"Income":"Expenses"}</span><b class="mono">${grand?fmtAUD0(grand):"·"}</b></div>
+      <div class="tablewrap"><table class="grid">${head}<tbody>${body}</tbody>
+      <tfoot><tr class="grandtotal ${kind}"><td>Total ${word}</td>${cells(all,fmtAUD0)}<td class="r mono">${grand?fmtAUD0(grand):"·"}</td></tr></tfoot></table></div></div>`;
+  };
+  const inc=table("income",d.groups.filter(g=>g.kind==="income")), exp=table("expense",d.groups.filter(g=>g.kind!=="income"));
+  return {html:(inc+exp)||`<div class="tablewrap"><table class="grid"><tbody><tr><td class="hint">Nothing coded to this sheet for ${year} yet.</td></tr></tbody></table></div>`,d,hidden};
 }
 /* One copyable run per block. Blocks are copied separately because the sheets
    put a header row above each block and a formula Total row below it — pasting
@@ -5117,17 +5163,36 @@ $("#impFile").addEventListener("change",e=>{
 /* Statements come a month at a time, so several can be dropped in at once.
    They are read into one list, in date order, and handed to the same importer
    a pasted CSV goes through. */
+/* Statements dropped in together can overlap — a monthly statement and a
+   listing for the same weeks. A row that appears twice in ONE file is two
+   transactions; the same row in two files is one. So each identical row is
+   taken as many times as the file holding the most of it has it. */
+function mergeStatementRows(perFile){
+  const keyOf=r=>r.date+"|"+Math.round(r.aud*100)+"|"+String(r.desc||"").slice(0,40).toLowerCase();
+  const most=new Map(), out=[];
+  for(const rows of perFile){
+    const c=new Map();
+    for(const r of rows){ const k=keyOf(r); c.set(k,(c.get(k)||0)+1); }
+    for(const [k,v] of c) most.set(k,Math.max(most.get(k)||0,v));
+  }
+  const used=new Map();
+  for(const rows of perFile) for(const r of rows){
+    const k=keyOf(r), u=used.get(k)||0;
+    if(u<most.get(k)){ used.set(k,u+1); out.push(r); }
+  }
+  return out;
+}
 async function takeStatements(files){
   const pdfs=files.filter(f=>/\.pdf$/i.test(f.name));
   const st=$("#impStatus");
   st.textContent=`Reading ${pdfs.length} statement${pdfs.length===1?"":"s"}…`;
   $("#pdfNote").style.display="none";
-  const all=[],reports=[],failed=[];
+  const all=[],reports=[],failed=[],perFile=[];
   for(const f of pdfs){
     try{
       const got=await readStatement(f);
       if(!got){ failed.push([f.name,"not a statement this can read yet"]); continue; }
-      all.push(...got.rows);
+      perFile.push(got.rows);
       reports.push({file:f.name,...got.rec});
     }catch(err){
       failed.push([f.name,/import|fetch|module|Failed/i.test(String(err&&err.message))
@@ -5135,6 +5200,7 @@ async function takeStatements(files){
         : String(err&&err.message||err)]);
     }
   }
+  all.push(...mergeStatementRows(perFile));
   if(!all.length){
     st.textContent="";
     showStatementReport(reports,failed,0);
