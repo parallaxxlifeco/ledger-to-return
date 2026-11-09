@@ -470,6 +470,19 @@ a.whois:hover{background:var(--accent);color:var(--accentink);border-color:var(-
 .rows .queue .txcard.qcur{opacity:1;border:2px solid var(--accent);box-shadow:inset 5px 0 0 var(--accent),0 0 0 3px var(--accentsoft);
   background:color-mix(in srgb,var(--accent) calc(var(--tintCur) + 8%),var(--surface));padding:6px 9px 6px 14px}
 .queue .txcard.qcur .desc{font-weight:700;color:var(--ink)}
+/* Rows picked to be answered together with the highlighted one. */
+.line1.hastick{grid-template-columns:20px 80px minmax(0,1fr) auto}
+.line1.hastick~.line2,.line1.hastick~.fx{padding-left:120px}
+.queue .line1.hastick~.line2,.queue .line1.hastick~.fx{padding-left:110px}
+.queue .line1.hastick{grid-template-columns:20px 74px minmax(0,1fr) auto}
+.txcard .tick{flex:none;width:18px;height:18px;border-radius:5px;border:1.5px solid var(--line);background:var(--surface);
+  align-self:center;padding:0;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;font-size:12px;line-height:1;color:var(--surface)}
+.txcard .tick:hover{border-color:var(--accent)}
+.txcard.picked .tick,.txcard.qcur.withpicked .tick{background:var(--accent);border-color:var(--accent)}
+.rows .txcard.picked{opacity:1;border-color:var(--accent);background:color-mix(in srgb,var(--accent) 10%,var(--surface))}
+.multibar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 10px;padding:8px 10px;border-radius:8px;
+  background:color-mix(in srgb,var(--accent) 12%,var(--surface));font-size:13px;color:var(--ink)}
+.multibar b{color:var(--accent)}
 .queue .txcard.qcur .line1 .d{color:var(--ink2)}
 .splitmode .sortright{min-height:0;display:flex;flex-direction:column}
 .splitmode .sortright .pickbox{flex:1;min-height:0}
@@ -488,6 +501,9 @@ a.whois:hover{background:var(--accent);color:var(--accentink);border-color:var(-
 @media (max-width:700px){
   .line1{grid-template-columns:64px minmax(0,1fr);row-gap:4px}
   .amt{grid-column:1/-1;justify-content:flex-start;padding-left:76px}
+  .line1.hastick,.queue .line1.hastick{grid-template-columns:20px 64px minmax(0,1fr)}
+  .line1.hastick .amt{padding-left:96px}
+  .line1.hastick~.line2,.line1.hastick~.fx,.queue .line1.hastick~.line2,.queue .line1.hastick~.fx{padding-left:0}
   .line2,.fx{padding-left:0}
   .txcard.cur .line2{padding-left:0}
   .kindrow{grid-template-columns:1fr}
@@ -3313,9 +3329,9 @@ function chips(t){
   return out.join("");
 }
 function restingCard(t){
-  return `<div class="txcard${settled(t)?" done":""}" data-id="${t.id}">
-    <div class="line1">
-      <span class="d">${niceDate(t.date)}</span>
+  return `<div class="txcard${settled(t)?" done":""}${picked.has(t.id)?" picked":""}" data-id="${t.id}">
+    <div class="line1 hastick">
+      <button class="tick" data-tick="${t.id}" title="Tick to give it the same answer as the highlighted row — or ⌘-click the row, shift-click for a run">✓</button><span class="d">${niceDate(t.date)}</span>
       <span class="desc" title="${esc(t.desc)}">${esc(t.desc)}</span>
       ${money(t)}
     </div>
@@ -3365,10 +3381,10 @@ function activeCard(t){
      answers on the left, the list down the whole right side, so it needs far
      less scrolling. Narrow screens stack them again (see .split in the CSS). */
   if(right) return `<div class="txcard cur split" data-id="${t.id}">
-    <div class="curleft">${head}${body}</div>
+    <div class="curleft">${head}${multiBar()}${body}</div>
     <div class="curright">${right}</div>
   </div>`;
-  return `<div class="txcard cur" data-id="${t.id}">${UNDO.length?`<div class="undorow">${undoBtn()}</div>`:""}${head}${body}</div>`;
+  return `<div class="txcard cur" data-id="${t.id}">${UNDO.length?`<div class="undorow">${undoBtn()}</div>`:""}${head}${multiBar()}${body}</div>`;
 }
 function activeParts(t){
   const e=enrich(t);
@@ -3474,6 +3490,7 @@ function splitAmounts(amt,pct,cur){
   return [a,Math.round((amt-a)*f)/f];
 }
 function splitBlock(t){
+  if(picked.size&&!t.split) return "";          // a split is one row's answer
   if(t.split){
     const sibs=B().tx.filter(x=>x.split&&x.split.of===t.split.of);
     return `<div class="splitrow"><span>Part ${t.split.part} of ${t.split.n} · ${t.split.pct}% of ${fmtCur(t.split.amt,t.cur)}</span>
@@ -3618,7 +3635,7 @@ function applyRefund(id){
   }else copy(t,m.parts[0]);
   markDirty();
   toast(`Refund taken off — filed like the ${niceDate(m.date)} charge`);
-  advance(nextId);
+  advance(nextId,{noFan:true});
 }
 /* The report's list: refunds of business costs that are still filed as
    something else, so the cost they reverse is claimed in full. */
@@ -3647,17 +3664,17 @@ const splitMode=()=>window.innerWidth>=SPLIT_MIN;
 /* One line per transaction; the chips only once there is an answer to show —
    "Not sorted" on every row of a to-sort list says nothing. */
 function queueRow(t,meta){
-  if(meta) return `<div class="txcard q qcur${settled(t)?" done":""}" data-id="${t.id}">
-    <div class="line1">
-      <span class="d">${niceDate(t.date)}</span>
+  if(meta) return `<div class="txcard q qcur${settled(t)?" done":""}${picked.size?" withpicked":""}" data-id="${t.id}">
+    <div class="line1 hastick">
+      <span class="tick" title="The highlighted row — its answer goes to every ticked one">${picked.size?"✓":""}</span><span class="d">${niceDate(t.date)}</span>
       <span class="desc">${esc(t.desc)}</span>
       ${money(t)}
     </div>${meta}
   </div>`;
   const c=chips(t);
-  return `<div class="txcard q${settled(t)?" done":""}${t.id===curId?" qcur":""}" data-id="${t.id}">
-    <div class="line1">
-      <span class="d">${niceDate(t.date)}</span>
+  return `<div class="txcard q${settled(t)?" done":""}${t.id===curId?" qcur":""}${picked.has(t.id)?" picked":""}" data-id="${t.id}">
+    <div class="line1 hastick">
+      <button class="tick" data-tick="${t.id}" title="Tick to give it the same answer as the highlighted row — or ⌘-click the row, shift-click for a run">✓</button><span class="d">${niceDate(t.date)}</span>
       <span class="desc" title="${esc(t.desc)}">${esc(t.desc)}</span>
       ${money(t)}
     </div>${c?`<div class="line2">${c}</div>`:""}
@@ -3676,7 +3693,7 @@ function renderSplit(el,seq,more){
   /* The card is only the answers here: the transaction itself is the
      highlighted row in the queue, where it reads in line with the rest. */
   el.innerHTML=`<div class="sortleft">
-      <div class="txcard cur answers" data-id="${t.id}"><div class="anshead"><span>Answer the highlighted row</span>${undoBtn()}</div>${body}</div>
+      <div class="txcard cur answers" data-id="${t.id}"><div class="anshead"><span>${picked.size?"Answer the highlighted and ticked rows":"Answer the highlighted row"}</span>${undoBtn()}</div>${multiBar()}${body}</div>
       ${fromReport?reportBar(seq.length):`<div class="qhead">${filter==="todo"?"Still to sort":"In this view"} <span>${seq.length}${more?"+":""}</span></div>`}
       <div class="queue">${seq.map(x=>queueRow(x,x.id===t.id?meta:null)).join("")}${more?`<div class="empty" style="padding:14px">Showing the first 250. Clear these and the rest come up.</div>`:""}</div>
     </div>
@@ -3714,7 +3731,21 @@ function wireCards(){
   $$("#rowList [data-back-report]").forEach(b=>b.addEventListener("click",e=>{ e.stopPropagation(); goBackToReport(); }));
   $$("#rowList .txcard").forEach(c=>c.addEventListener("mousedown",ev=>{
     if(ev.target.closest("button,input,label,a")) return;
-    if(c.dataset.id!==curId){ curId=c.dataset.id; resetPick(); renderList(); }
+    if(c.dataset.id===curId) return;
+    if(ev.metaKey||ev.ctrlKey||ev.shiftKey){
+      ev.preventDefault();
+      ev.shiftKey?pickRange(c.dataset.id):togglePicked(c.dataset.id);
+      renderList(); return;
+    }
+    picked.clear(); curId=c.dataset.id; resetPick(); renderList();
+  }));
+  $$("#rowList [data-tick]").forEach(b=>b.addEventListener("mousedown",e=>{
+    e.preventDefault(); e.stopPropagation();
+    e.shiftKey?pickRange(b.dataset.tick):togglePicked(b.dataset.tick); renderList();
+  }));
+  $$("#rowList [data-pick-clear]").forEach(b=>b.addEventListener("click",e=>{ e.stopPropagation(); picked.clear(); renderList(); }));
+  $$("#rowList [data-pick-all]").forEach(b=>b.addEventListener("click",e=>{
+    e.stopPropagation(); for(const t of visibleTx()) if(!settled(t)&&t.id!==curId) picked.add(t.id); renderList();
   }));
   $$("#rowList .kindbtn").forEach(b=>b.addEventListener("click",()=>setKind(b.dataset.kind)));
   $$("#rowList [data-fy]").forEach(b=>b.addEventListener("click",e=>{
@@ -3758,6 +3789,44 @@ function focusPick(){
    Gojek answer — food, that day — quietly became every Gojek ride after it.
    Nothing is carried forward unless it is asked for. */
 function resetPick(){ pickQ=""; pickSel=0; pickMode=null; ruleOn=false; lineScope=null; splitOpen=null; whoOpen=null; closeCheckpoint(); }
+/* ---- answering several rows at once ----
+   Tick rows (or ⌘-click them, shift-click for a run) and the answer given to
+   the highlighted row goes to every ticked one too — ten restaurant charges,
+   one answer. The highlighted row leads: its answer is made the usual way,
+   line and all, then copied across. One Undo takes back the lot. */
+const picked=new Set();
+const pickedRows=()=>B().tx.filter(t=>picked.has(t.id)&&t.id!==curId);
+function togglePicked(id){
+  if(id===curId) return;
+  picked.has(id)?picked.delete(id):picked.add(id);
+}
+function pickRange(id){
+  const list=visibleTx(), a=list.findIndex(t=>t.id===curId), b=list.findIndex(t=>t.id===id);
+  if(a<0||b<0) return togglePicked(id);
+  for(const t of list.slice(Math.min(a,b),Math.max(a,b)+1)) if(t.id!==curId) picked.add(t.id);
+}
+function multiBar(){
+  const rows=pickedRows(); if(!rows.length) return "";
+  const lead=currentTx(), all=lead?[lead,...rows]:rows;
+  const tot=all.reduce((s,t)=>s+(enrich(t).aud||0),0);
+  const more=visibleTx().filter(t=>!settled(t)&&t.id!==curId&&!picked.has(t.id)).length;
+  return `<div class="multibar"><span><b>${all.length} rows</b> get this answer · ${fmtAUD(tot)}</span>
+    ${more?`<button class="btn sm" data-pick-all="1" title="Tick every unsorted row in this view">Tick all ${more+all.length} unsorted here</button>`:""}
+    <button class="btn sm" data-pick-clear="1" title="Untick them (Esc)">Clear</button></div>`;
+}
+/* The lead row's answer, onto every ticked row. A Stripe fee row keeps no
+   sheet line, the same as when it is answered on its own. */
+function fanOut(lead){
+  const rows=pickedRows(); picked.clear();
+  if(!lead||!rows.length) return 0;
+  for(const x of rows){
+    x.kind=lead.kind; x.tax=lead.tax; x.line=x.noSheet&&lead.kind==="business"?null:lead.line;
+    x.auto=false; delete x.refundOf;
+  }
+  markDirty();
+  return rows.length;
+}
+
 /* ---- undo ----
    Before each answer the book is snapshotted — rows, rules, the learned
    category→line map — so a wrong press can be taken back in one step. A
@@ -3937,7 +4006,14 @@ function goBackToReport(msg){
   if(msg) toast(msg);
 }
 const leaveReportCtx=()=>{ if(fromReport){ fromReport=null; backToReport=null; } };
-function advance(nextId){
+function advance(nextId,opt){
+  if(picked.size&&!(opt&&opt.noFan)){
+    const lead=currentTx(), had=new Set(picked), n=fanOut(lead);
+    if(n){
+      toast(`${n+1} rows filed the same way`);
+      if(nextId&&had.has(nextId)) nextId=(visibleTx().find(x=>!settled(x)&&x.id!==curId)||{}).id||null;
+    }
+  }
   closeCheckpoint();
   if(backToReport){
     const was=backToReport; backToReport=null;
@@ -5243,7 +5319,7 @@ document.addEventListener("keydown",e=>{
     if(hits.length&&$("#pickInput")) choose(hits[pickSel].key);
     return;
   }
-  if(e.key==="Escape"){ e.preventDefault(); if(pickQ){pickQ="";pickSel=0;renderList();focusPick();} else closeWho(); return; }
+  if(e.key==="Escape"){ e.preventDefault(); if(pickQ){pickQ="";pickSel=0;renderList();focusPick();} else if(picked.size){ picked.clear(); renderList(); } else closeWho(); return; }
   /* Backspace clears this row only. Rules are removed in the rules panel,
      where what one has already done is visible before you kill it. */
   if(e.key==="Backspace"&&!pickQ){ e.preventDefault(); unassign(); return; }
@@ -5254,7 +5330,7 @@ document.addEventListener("keydown",e=>{
     e.preventDefault(); applyRefund(t.id); return;
   }
   /* S opens the split form, before an answer is started. */
-  if(!pickQ&&!pickMode&&(e.key==="s"||e.key==="S")&&t&&!t.split){
+  if(!pickQ&&!pickMode&&!picked.size&&(e.key==="s"||e.key==="S")&&t&&!t.split){
     e.preventDefault(); splitOpen=t.id; renderList(); return;
   }
   if(isTrack()&&!pickQ&&/^[pbtonr]$/i.test(e.key)){

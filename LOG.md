@@ -4,6 +4,17 @@ What was built, when, and what you'd need to know to change it. Newest first.
 
 ---
 
+## 2026-11-10 — Answer several rows at once
+
+"Can we build an option for me to select multiple transactions to file them all the same way — e.g. select 10 for Personal, Restaurants."
+
+- Every row in Sort has a tick box. Tick rows — or ⌘-click them, shift-click for a run from the highlighted row — and the answer you give the highlighted row goes to every ticked row as well. The answer card says how many rows and their total, with **Tick all N unsorted here** (handy after typing in the filter box) and **Clear** (or Esc). A plain click on another row clears the ticks.
+- How: `picked` (a Set of row ids) holds the ticked rows; the highlighted row is answered the usual way (kind → category → line); `advance()` then calls `fanOut()`, which copies kind, tax category and line onto the ticked rows (a Stripe fee row keeps no line). The undo snapshot is taken before the answer and holds every row, so one ⌘Z takes back the lot. Refunds (F) never fan out. Split is hidden while rows are ticked — it's one row's answer.
+- "Make a rule" still applies to the highlighted row's merchant only.
+- Test: `test/multi.test.mjs`.
+
+---
+
 ## 2026-11-10 — Coaching Clients: one line for one-to-one clients
 
 "In the tracker under Transformations, we have individual names — I want these to be folded into a single category of Coaching Clients." Jody "stays within GIA income"; ProTrader stays its own.
