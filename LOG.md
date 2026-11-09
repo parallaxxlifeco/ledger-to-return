@@ -4,6 +4,17 @@ What was built, when, and what you'd need to know to change it. Newest first.
 
 ---
 
+## 2026-11-09 — Personal spending comes from his sheet
+
+"Personal expenses don't need bank transactions. Usually I just deduct it from what Luiza owes me … So if it's in the sheet, just take it from there. Only business expenses should really have transaction lines."
+
+- The history file can now carry `personal: {ym: {out, lines}}`, the personal blocks (Living, Self-care, Lifestyle, Personal, Misc payments) from his Budget Tracker for months after `through`. For those months the summary, the Budget Tracker grid and the running total take personal spending from the sheet (`sheetPersonal`, `isPersonalLine`), and rows here on personal lines don't count towards them. Business lines are always the transactions. Months with no sheet figure fall back to the rows here. The tax return is untouched: it reads tax categories, not sheet lines.
+- **Update from your sheets…** sits next to Remove once history is loaded: a newer file is previewed, then replaces the old one on "Add it".
+- **The file:** `Ledger history from sheets.json` in the "Claude Code" folder (not this repo) now has personal months Jul 2025 – Jun 2026. To refresh it when the sheet moves on, ask Claude to re-read the Budget Tracker and rebuild the file; load it with Update from your sheets….
+- Tests: `test/personalsheet.test.mjs`; `running.test.mjs` fixed (it read the % row by position from before the money in/out rows were added).
+
+---
+
 ## 2026-11-07 — Reconnected Groups; Other last
 
 - **"Reconnected Man" → "Reconnected Groups"** (it carries the men's and women's income), on both sheets. `RENAMED_LINES` renames a saved list on load, before the keys are checked, so `normaliseTrackKeys` moves rows, rules, learned links, roll-ups and sheet history to the new key (`…:reconnected-groups`). `LINE_ALIASES` maps the old key in a history file. Seed, `ROLLUP_SEED`, `MERGED_LINES` and the Stripe product rule (`STRIPE_LINES`, which now also matches "Reconnected Groups") point at the new key.

@@ -47,7 +47,7 @@ check('the starting point is saved with the data', st.saved && st.saved.open ===
 check('July: +1000 in, −300 out = +700', Math.abs(st.jul.month - 700) < 0.01 && Math.abs(st.jul.run - 8684.62) < 0.01, JSON.stringify(st.jul));
 check('August: −200, refund +50, the transfer not counted = −150', Math.abs(st.aug.month + 150) < 0.01 && Math.abs(st.aug.run - 8534.62) < 0.01, JSON.stringify(st.aug));
 const pct = await p.evaluate(() => { const r = runningSeries(); return {jun: runChange(r, '2026-06'), jul: runChange(r, '2026-07'), aug: runChange(r, '2026-08'),
-  row: [...document.querySelectorAll('.runcard tbody tr')][2].innerText.replace(/\s+/g, ' ')}; });
+  row: [...document.querySelectorAll('.runcard tbody tr')].at(-1).innerText.replace(/\s+/g, ' ')}; });
 check('vs last month: none at the start, +8.8% in July, −1.7% in August', pct.jun === null && Math.abs(pct.jul - 700 / 7984.62 * 100) < 0.01
   && Math.abs(pct.aug + 150 / 8684.62 * 100) < 0.01 && /▲ 8\.8% ▼ 1\.7%/.test(pct.row), JSON.stringify(pct));
 check('rows before the start are not counted again', Math.abs(st.run - 8534.62) < 0.01, String(st.run));

@@ -4184,6 +4184,11 @@ function gridData(sheetId,year){
       for(const [k,v] of Object.entries(hm.lines||{})) if(TRK[k]) (cells[k]=cells[k]||Array(12).fill(0))[m]+=v;
     }
   }
+  if(sheetId==="budget") for(let m=0;m<12;m++){
+    const P=sheetPersonal(year+"-"+String(m+1).padStart(2,"0")); if(!P) continue;
+    for(const k in cells) if(isPersonalLine(k)) cells[k][m]=0;
+    for(const [k,v] of Object.entries(P.lines||{})) if(TRK[k]) (cells[k]=cells[k]||Array(12).fill(0))[m]+=v;
+  }
   const groups=[];
   for(const l of lines){
     const gk=l.kind+"|"+l.group;
@@ -4355,13 +4360,29 @@ function renderReport(){
 /* Money in and out per month, across both sheets: every sorted row on a sheet
    line. In is what landed on income lines; out is what went on expense lines,
    less any refunds on them. The month's result is the difference. */
+/* His personal spending isn't all in the bank: much of it is squared up with
+   Luiza against what she owes him, so it never shows as a transaction. His
+   Budget Tracker has it, so for the months it covers the personal blocks
+   (Living, Self-care, Lifestyle, Personal, Misc payments) come from the sheet,
+   and rows here on personal lines don't count towards them. Business lines are
+   always the transactions. (S.history.personal: {ym:{out, lines}}.) */
+const sheetPersonal=ym=>{ const H=S.history;
+  return H&&H.personal&&(!H.through||ym>H.through)?H.personal[ym]||null:null; };
+const persRange=()=>{ const H=S.history; if(!H||!H.personal) return "";
+  const k=Object.keys(H.personal).filter(ym=>sheetPersonal(ym)).sort(); return k.length?ymLabel(k[0])+" – "+ymLabel(k[k.length-1]):""; };
+const isPersonalLine=k=>!!(TRK[k]&&TRK[k].scope==="personal"&&TRK[k].kind==="expense");
 function monthTotals(){
   const m={}, H=S.history&&S.history.months?S.history:null;
   if(H) for(const [ym,h] of Object.entries(H.months)) if(ym<=H.through) m[ym]={in:h.in,out:h.out,net:Math.round((h.in-h.out)*100)/100,sheet:true};
+  if(S.history&&S.history.personal) for(const ym of Object.keys(S.history.personal)){
+    const P=sheetPersonal(ym); if(!P) continue;
+    const c=m[ym]||(m[ym]={in:0,out:0,net:0}); c.out+=P.out; c.net-=P.out; c.personalSheet=true;
+  }
   for(const t of B().tx){
     const k=lineOf(t);
     if(!k||!TRK[k]||!settled(t)) continue;
     if(H&&t.date.slice(0,7)<=H.through) continue;    // that month comes from his sheets
+    if(isPersonalLine(k)&&sheetPersonal(t.date.slice(0,7))) continue;   // personal: from his sheet
     const e=enrich(t); if(e.aud==null) continue;
     const ym=t.date.slice(0,7), c=m[ym]||(m[ym]={in:0,out:0,net:0});
     if(TRK[k].kind==="income") c.in+=e.aud; else c.out-=e.aud;
@@ -4384,7 +4405,7 @@ function runningSeries(){
   const r=H&&H.open?{open:H.open.amount,asOf:H.open.asOf}:S.running;
   if(!r||!/^\d{4}-\d{2}$/.test(r.asOf||"")||!isFinite(+r.open)) return null;
   const res=monthResults();
-  const dates=B().tx.map(t=>t.date.slice(0,7)).concat(H&&H.months?Object.keys(H.months):[]).sort();
+  const dates=B().tx.map(t=>t.date.slice(0,7)).concat(H&&H.months?Object.keys(H.months):[],H&&H.personal?Object.keys(H.personal):[]).sort();
   const first=dates.length?(dates[0]<r.asOf?dates[0]:r.asOf):r.asOf, last=dates.length?dates[dates.length-1]:r.asOf;
   const series={[r.asOf]:{month:res[r.asOf]||0,run:+r.open}};
   let ym=r.asOf, run=+r.open;
@@ -4426,10 +4447,12 @@ function runningCard(year){
   const hFirst=H?Object.keys(H.months).sort()[0]:null;
   const head=rs?`<div><span class="lbl">Running total</span>
         <div class="v mono" style="font-size:28px;font-weight:600;margin-top:2px">${fmt(rs.run)}</div>
-        <div class="hint" style="margin-top:2px">${word(rs.run)} · end of ${ymLabel(rs.last)}${H?` · your sheets ${ymLabel(hFirst)} – ${ymLabel(H.through)}, then this app`:""}</div></div>`
+        <div class="hint" style="margin-top:2px">${word(rs.run)} · end of ${ymLabel(rs.last)}${H?` · your sheets ${ymLabel(hFirst)} – ${ymLabel(H.through)}, then this app`:""}${persRange()?` · personal spending from your sheet ${persRange()}`:""}</div></div>`
     :`<div><span class="lbl">${year} summary</span></div>`;
   const controls=H
-    ? `<button class="btn sm noprint" id="histRemove" title="Take the history from your sheets out again">Remove sheet history</button>`
+    ? `<span style="display:flex;gap:8px"><button class="btn sm noprint" id="histLoad" title="Load a newer file Claude made from your sheets — it replaces this one">Update from your sheets…</button>
+        <input type="file" id="histFile" accept=".json" style="display:none">
+        <button class="btn sm noprint" id="histRemove" title="Take the history from your sheets out again">Remove sheet history</button></span>`
     : `<div style="display:flex;flex-direction:column;gap:8px;align-items:flex-end">
         <span><button class="btn sm noprint" id="histLoad" title="The months your own sheets cover, from the file Claude made from them">Load history from your sheets…</button>
         <input type="file" id="histFile" accept=".json" style="display:none"></span>${setForm}</div>`;
@@ -4460,6 +4483,7 @@ let pendingHist=null;
 function histPreview(){
   const P=pendingHist; if(!P) return "";
   const ms=Object.keys(P.months).sort();
+  const pm=P.personal?Object.keys(P.personal).filter(ym=>ym>P.through).sort():[];
   let run=+P.open.amount;
   const rows=ms.map(ym=>{ const h=P.months[ym], net=h.in-h.out; run+=net;
     const f=v=>`${v<0?"−":""}$${Math.abs(v).toLocaleString("en-AU",{maximumFractionDigits:0})}`;
@@ -4471,13 +4495,16 @@ function histPreview(){
     <div class="tablewrap" style="max-height:320px;overflow:auto"><table class="grid"><thead><tr><th>Month</th><th class="r">In</th><th class="r">Out</th><th class="r">Result</th><th class="r">Running total</th></tr></thead><tbody>${rows}</tbody></table></div>
     ${folded}
     <p class="hint" style="margin:0">For these months your sheets replace what's loaded here; from ${ymLabel(ymAdd(P.through,1))} it's this app.</p>
+    ${pm.length?`<p class="hint" style="margin:0"><b>Personal spending, ${ymLabel(pm[0])} – ${ymLabel(pm[pm.length-1])}:</b> taken from your sheet (${
+      pm.map(ym=>`${MONTHS[+ym.slice(5,7)-1]} $${Math.round(P.personal[ym].out).toLocaleString("en-AU")}`).join(", ")}). Business lines stay the transactions here.</p>`:""}
     <div style="display:flex;gap:8px"><button class="btn sm pri" id="histAdd">Add it</button><button class="btn sm" id="histCancel">Cancel</button></div>
   </div>`;
 }
 function readHistory(text){
   const h=JSON.parse(text);
   if(!h||h.kind!=="ledger-to-return-history"||!h.months||!/^\d{4}-\d{2}$/.test(h.through||"")||!h.open||!isFinite(+h.open.amount)) throw new Error("not a history file");
-  for(const m of Object.values(h.months)) for(const k of Object.keys(m.lines||{}))
+  if(h.personal&&typeof h.personal!=="object") throw new Error("not a history file");
+  for(const m of Object.values(h.months).concat(Object.values(h.personal||{}))) for(const k of Object.keys(m.lines||{}))
     if(LINE_ALIASES[k]){ const to=LINE_ALIASES[k]; m.lines[to]=(m.lines[to]||0)+m.lines[k]; delete m.lines[k]; }
   return h;
 }
@@ -4493,8 +4520,8 @@ function wireHistory(){
     });
   }
   const A=$("#histAdd"); if(A) A.addEventListener("click",()=>{
-    S.history=pendingHist; pendingHist=null; markDirty(); renderReport();
-    toast("History from your sheets added — the running total now starts where they did");
+    const upd=!!S.history; S.history=pendingHist; pendingHist=null; markDirty(); renderReport();
+    toast(upd?"Sheet history updated":"History from your sheets added — the running total now starts where they did");
   });
   const C=$("#histCancel"); if(C) C.addEventListener("click",()=>{ pendingHist=null; renderReport(); });
   const R=$("#histRemove"); if(R) R.addEventListener("click",()=>{
@@ -4514,7 +4541,7 @@ function wireRunning(){
 }
 function renderSheetsReport(){
   const year=S.gridYear;
-  const years=[...new Set(B().tx.map(t=>+t.date.slice(0,4)).concat(S.history&&S.history.months?Object.keys(S.history.months).map(k=>+k.slice(0,4)):[]))].sort();
+  const years=[...new Set(B().tx.map(t=>+t.date.slice(0,4)).concat(S.history&&S.history.months?Object.keys(S.history.months).map(k=>+k.slice(0,4)):[],S.history&&S.history.personal?Object.keys(S.history.personal).map(k=>+k.slice(0,4)):[]))].sort();
   if(!years.length) years.push(year);
   if(!years.includes(year)) years.push(year), years.sort();
   let hiddenTotal=0;
