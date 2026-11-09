@@ -523,8 +523,9 @@ table.grid tr.sec.hide{display:none}
 .gridpart+.gridpart{margin-top:26px}
 .gridtoggle{display:inline-flex;margin-top:2px}
 .gridsheet.show-income .gridpart.expense,.gridsheet.show-expense .gridpart.income{display:none}
+.gridsheet .gridnone{margin:12px 0 0}
 .gridsheet .gridpart+.gridpart{margin-top:14px}
-@media print{.gridsheet .gridpart{display:block!important}.gridsheet .gridpart+.gridpart{margin-top:26px}}
+@media print{.gridsheet .gridpart{display:block!important}.gridsheet .gridnone{display:none}.gridsheet .gridpart+.gridpart{margin-top:26px}}
 .gridtitle{display:flex;align-items:baseline;gap:10px;margin:0 0 6px;font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
 .gridtitle b{font-size:13px;letter-spacing:0}
 .gridpart.income .gridtitle{color:var(--income)}
@@ -4328,7 +4329,8 @@ function reportData(){
 }
 
 /* ---------------- monthly actuals grid ---------------- */
-function gridData(sheetId,year){
+function gridData(sheetId,year,opt){
+  const direct=!!(opt&&opt.direct);
   const lines=otherLast(TRACKS.filter(t=>t.sheet===sheetId));
   const cells={};
   let unsorted=0, otherYear=0;
@@ -4342,7 +4344,7 @@ function gridData(sheetId,year){
     if(!line) continue;
     const roll=rollTarget(key);
     const onThis = line.sheet===sheetId;
-    const rollsHere = roll && TRK[roll].sheet===sheetId;
+    const rollsHere = !direct && roll && TRK[roll].sheet===sheetId;
     if(!onThis&&!rollsHere) continue;
     if(+t.date.slice(0,4)!==year){ otherYear++; continue; }
     const m=+t.date.slice(5,7)-1;
@@ -4387,6 +4389,32 @@ function gridData(sheetId,year){
 }
 /* Which blocks of the sheet grids are closed — this viewer's choice, kept in
    this browser only. */
+/* Sheet actuals is laid out as Business and Personal rather than sheet by
+   sheet: GIA's blocks with TRANSFORMATIONS and PARALLAXX, then the personal
+   blocks (Daniel, Nov 2026). Shown without the roll-ups — on his sheets a GIA
+   figure also posted to a Budget Tracker line, which side by side would count
+   the same money twice. The per-sheet export ("Download both sheets") still
+   carries them. */
+const SECTIONS=[
+  {id:"business",name:"Business",parts:[["gia",null],["budget","business"]]},
+  {id:"personal",name:"Personal",parts:[["budget","personal"]]},
+];
+const SECTION_BY=Object.fromEntries(SECTIONS.map(x=>[x.id,x]));
+const gridName=id=>SECTION_BY[id]?SECTION_BY[id].name:SHEET_NAME[id];
+function sectionData(secId,year){
+  const sec=SECTION_BY[secId]; let groups=[],unsorted=0,otherYear=0,used=0;
+  for(const [sheet,scope] of sec.parts){
+    const d=gridData(sheet,year,{direct:true});
+    unsorted=d.unsorted; otherYear+=d.otherYear; used+=d.used;
+    for(const g of d.groups){
+      const sc=g.items[0]?g.items[0].line.scope:"business";
+      if(scope&&sc!==scope) continue;
+      groups.push({...g,sheet});
+    }
+  }
+  return {groups,unsorted,otherYear,used};
+}
+const gridDataFor=(id,year)=>SECTION_BY[id]?sectionData(id,year):gridData(id,year);
 /* Which half of each sheet is showing — Income or Expenses — per sheet, kept in
    this browser only. Printing shows both. */
 const GRIDVIEW_KEY="l2r.gridView";
@@ -4410,7 +4438,7 @@ function wireGridBlocks(){
   });
 }
 function gridTable(sheetId,year){
-  const d=gridData(sheetId,year);
+  const d=gridDataFor(sheetId,year);
   let hidden=0, shownSec=0;
   const head=`<thead><tr><th style="min-width:190px">Line</th>${
     MONTHS.map((m,i)=>`<th class="r"><button class="monthbtn" data-sheet="${sheetId}" data-m="${i}" title="Copy this month — every line in the block, empty ones included, so it lines up with your sheet">${m}</button></th>`).join("")
@@ -4430,7 +4458,7 @@ function gridTable(sheetId,year){
       if(hideEmpty&&!shown.length) return "";
       /* Each block its own colour, in order down the sheet; closed blocks keep
          their header and Total. */
-      const sec=sheetId+"|"+g.kind+"|"+g.group, closed=gridClosed.has(sec);
+      const sec=(g.sheet||sheetId)+"|"+g.kind+"|"+g.group, closed=gridClosed.has(sec);
       const col=`--g:var(--cat${(shownSec++%8)+1})`;
       const rows=shown.map((it,i)=>{
         const tot=it.months.reduce((a,b)=>a+b,0);
@@ -4456,7 +4484,7 @@ function gridTable(sheetId,year){
    put a header row above each block and a formula Total row below it — pasting
    one long column would land on top of both. */
 function gridColumnBlocks(sheetId,month,year){
-  const d=gridData(sheetId,year);
+  const d=gridDataFor(sheetId,year);
   return d.groups.map(g=>({
     group:g.group, kind:g.kind,
     first:g.items.length?g.items[0].line.label:"",
@@ -4467,8 +4495,8 @@ function gridColumnBlocks(sheetId,month,year){
   }));
 }
 function gridCsv(sheetId,year){
-  const d=gridData(sheetId,year);
-  const L=[[SHEET_NAME[sheetId]+" — actuals "+year].map(csvq).join(",")];
+  const d=gridDataFor(sheetId,year);
+  const L=[[gridName(sheetId)+" — actuals "+year].map(csvq).join(",")];
   L.push(["Block","Type","Line","Tax category",...MONTHS,"Year"].map(csvq).join(","));
   for(const g of d.groups) for(const it of g.items){
     const tot=it.months.reduce((a,b)=>a+b,0);
@@ -4769,16 +4797,18 @@ function renderSheetsReport(){
   if(!years.length) years.push(year);
   if(!years.includes(year)) years.push(year), years.sort();
   let hiddenTotal=0;
-  const blocks=SHEET_SEED.map(sh=>{
+  /* One switch for both: Income or Expenses shows in every section at once. */
+  const v=gridView.all==="expense"?"expense":"income";
+  const blocks=SECTIONS.map(sh=>{
     const {html,d,hidden}=gridTable(sh.id,year);
     hiddenTotal+=hidden;
-    const v=gridView[sh.id]==="expense"?"expense":"income";
+    const has=k=>d.groups.some(g=>(k==="income")===(g.kind==="income"));
     return `<div class="sechead"><h2>${esc(sh.name)}</h2><div class="rule"></div>
         <button class="btn sm noprint" data-csv="${sh.id}">Download CSV</button></div>
       <div class="chipset noprint gridtoggle" role="tablist">
-        <button class="chip" data-gview="${sh.id}|income" aria-pressed="${v==="income"}">Income</button>
-        <button class="chip" data-gview="${sh.id}|expense" aria-pressed="${v==="expense"}">Expenses</button></div>
-      <div class="gridsheet show-${v}">${html}</div>
+        <button class="chip" data-gview="income" aria-pressed="${v==="income"}">Income</button>
+        <button class="chip" data-gview="expense" aria-pressed="${v==="expense"}">Expenses</button></div>
+      <div class="gridsheet show-${v}">${html}${has(v)?"":`<p class="hint gridnone">No ${v==="income"?"income":"expense"} lines under ${esc(sh.name)}.</p>`}</div>
       ${d.otherYear?`<p class="hint" style="margin-top:8px">${d.otherYear} transaction${d.otherYear===1?"":"s"} on these lines fall outside ${year}.</p>`:""}`;
   }).join("");
   const unsorted=B().tx.filter(t=>!settled(t)).length;
@@ -4816,7 +4846,7 @@ function renderSheetsReport(){
   $("#hideEmpty").addEventListener("change",e=>{hideEmpty=e.target.checked;renderReport();});
   wireGridBlocks();
   $$("#reportInner [data-gview]").forEach(b=>b.addEventListener("click",()=>{
-    const [sh,v]=b.dataset.gview.split("|"); gridView[sh]=v; saveGridView();
+    gridView.all=b.dataset.gview; saveGridView();
     const y=window.scrollY; renderReport(); window.scrollTo(0,y);
   }));
   $("#dlActuals").addEventListener("click",()=>download(`monthly-actuals-${year}.csv`,actualsCsv(year)));
@@ -4827,7 +4857,7 @@ function renderSheetsReport(){
 }
 function copyColumn(sheetId,month,year){
   const blocks=gridColumnBlocks(sheetId,month,year);
-  const label=`${SHEET_NAME[sheetId]} — ${MONTHS[month]} ${year}`;
+  const label=`${gridName(sheetId)} — ${MONTHS[month]} ${year}`;
   const panel=$("#copyPanel");
   panel.innerHTML=`<div class="card" style="margin-top:20px"><header><h2>${esc(label)}</h2>
       <div class="spacer"></div><button class="btn sm" id="closeCopy">Close</button></header>

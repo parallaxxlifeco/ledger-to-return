@@ -4,6 +4,17 @@ What was built, when, and what you'd need to know to change it. Newest first.
 
 ---
 
+## 2026-11-10 — Sheet actuals as Business and Personal; one Income / Expenses switch
+
+"When I switch to expenses / income on one tab make them both switch … Also move Transformations and Parallaxx to join the above with GIA so there becomes a clear distinction between business and personal."
+- Sheet actuals is now two sections, **Business** (GIA's GIVE IT ALL and CIRCLES blocks, then TRANSFORMATIONS and PARALLAXX) and **Personal** (Living, Self-care, Lifestyle, Personal, Misc payments) — `SECTIONS`, `sectionData`. The lines and their keys are unchanged; only the layout moved.
+- Shown **without roll-ups** (`gridData(..., {direct:true})`): on his sheets a GIA figure also posted to a Budget Tracker line (GIA, Reconnected Groups, Founders Breakfast, VA Admin), and side by side that would count the same money twice. So Business "Total income" now equals the summary's Money in for the business lines. "Download both sheets" still exports sheet by sheet, roll-ups included.
+- One switch: the Income / Expenses toggle under each title moves both sections together (`gridView.all`). Personal has no income lines, so with Income on it says so.
+- Block open/closed state keeps its keys (`sheet|kind|group`), so blocks you'd closed stay closed. The CSV and month-copy buttons work per section.
+- Test: `test/gridtoggle.test.mjs` (rewritten).
+
+---
+
 ## 2026-11-10 — Running total %: against the start of the year
 
 "Jan should be measured against Dec the year before, and the other months should all be measured against Jan … so numerous negative months don't automatically get resolved with a single increase turning it green."
