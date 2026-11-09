@@ -4,6 +4,14 @@ What was built, when, and what you'd need to know to change it. Newest first.
 
 ---
 
+## 2026-11-10 — Income / Expenses toggle on each sheet
+
+"I want a toggle tab between income and expenses on the sheets under each of the titles."
+- Under each sheet's title on Sheet actuals: **Income | Expenses**. One half shows at a time; it opens on Income. Which one is remembered per sheet in this browser (`l2r.gridView`). Both halves are still drawn (`.gridsheet.show-income/.show-expense` hides the other), so printing shows both.
+- Test: `test/gridtoggle.test.mjs`.
+
+---
+
 ## 2026-11-10 — Identical rows on one statement; income and expenses apart on Sheet actuals
 
 **Two identical rows are two transactions.** "They should be side by side, same amount" — two Lufthansa tickets, same day, same price, same description. The importer took the second for a duplicate of the first and skipped it ($1,538 missing).
