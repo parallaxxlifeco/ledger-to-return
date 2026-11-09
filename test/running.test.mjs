@@ -48,8 +48,8 @@ check('July: +1000 in, −300 out = +700', Math.abs(st.jul.month - 700) < 0.01 &
 check('August: −200, refund +50, the transfer not counted = −150', Math.abs(st.aug.month + 150) < 0.01 && Math.abs(st.aug.run - 8534.62) < 0.01, JSON.stringify(st.aug));
 const pct = await p.evaluate(() => { const r = runningSeries(); return {jun: runChange(r, '2026-06'), jul: runChange(r, '2026-07'), aug: runChange(r, '2026-08'),
   row: [...document.querySelectorAll('.runcard tbody tr')].at(-1).innerText.replace(/\s+/g, ' ')}; });
-check('vs last month: none at the start, +8.8% in July, −1.7% in August', pct.jun === null && Math.abs(pct.jul - 700 / 7984.62 * 100) < 0.01
-  && Math.abs(pct.aug + 150 / 8684.62 * 100) < 0.01 && /▲ 8\.8% ▼ 1\.7%/.test(pct.row), JSON.stringify(pct));
+check('vs start of year: none in the first month, July +8.8% and August +6.9% both against June (the first month there is)',
+  pct.jun === null && Math.abs(pct.jul - 700 / 7984.62 * 100) < 0.01 && Math.abs(pct.aug - 550 / 7984.62 * 100) < 0.01 && /▲ 8\.8% ▲ 6\.9%/.test(pct.row), JSON.stringify(pct));
 check('rows before the start are not counted again', Math.abs(st.run - 8534.62) < 0.01, String(st.run));
 check('the card shows the total now, as a buffer, at the last month', /\+\$8,535 buffer · end of Aug 2026/.test(st.card), st.card.slice(0, 120));
 
@@ -62,9 +62,20 @@ const neg = await p.evaluate(() => {
   return {jan: r.series['2027-01'], dec: r.series['2026-12'], card: document.querySelector('.runcard').innerText.replace(/\s+/g, ' ')};
 });
 const negPct = await p.evaluate(() => runChange(runningSeries(), '2027-01'));
-check('a fall from +450 to −1,550 reads as about −444%', Math.abs(negPct + 2000 / 450 * 100) < 0.01, String(negPct));
+check('January is against December: +450 to −1,550 reads as about −444%', Math.abs(negPct + 2000 / 450 * 100) < 0.01, String(negPct));
 check('carries across the new year without resetting', Math.abs(neg.dec.run - 450) < 0.01 && Math.abs(neg.jan.run + 1550) < 0.01, JSON.stringify(neg));
 check('and below zero it reads "to earn back"', /−\$1,550 to earn back · end of Jan 2027/.test(neg.card), neg.card.slice(0, 120));
+
+// several bad months and then one good one: still measured against January, so it stays red until the year is ahead
+const yr = await p.evaluate(() => {
+  const rs = {series: {'2025-12': {month: 0, run: 1000}, '2026-01': {month: 100, run: 1100}, '2026-02': {month: -300, run: 800},
+    '2026-03': {month: -200, run: 600}, '2026-04': {month: 300, run: 900}, '2026-05': {month: 400, run: 1300}}};
+  return {jan: runChange(rs, '2026-01'), feb: runChange(rs, '2026-02'), apr: runChange(rs, '2026-04'), may: runChange(rs, '2026-05'), year: runYearChange(rs, 2026)};
+});
+check('January is against December (+10%)', Math.abs(yr.jan - 10) < 0.01, JSON.stringify(yr));
+check('later months against January: Feb −27%, and April still −18% after its good month', Math.abs(yr.feb + 300 / 11) < 0.01 && Math.abs(yr.apr + 200 / 11) < 0.01, JSON.stringify(yr));
+check('green only once the year is ahead of January: May +18%', Math.abs(yr.may - 200 / 11) < 0.01, JSON.stringify(yr));
+check('the Year column: last month against the December before (+30%)', Math.abs(yr.year - 30) < 0.01, JSON.stringify(yr));
 
 check('no page errors', errs.length === 0, errs.join(' | '));
 await b.close();

@@ -4,6 +4,15 @@ What was built, when, and what you'd need to know to change it. Newest first.
 
 ---
 
+## 2026-11-10 — Running total %: against the start of the year
+
+"Jan should be measured against Dec the year before, and the other months should all be measured against Jan … so numerous negative months don't automatically get resolved with a single increase turning it green."
+- The row under Running total is now **vs start of year**: January against December; February–December against January (`runChange`, base from `runBase`). If the data starts after January, the first month there is takes January's place. The **Year** column shows the year's last month against the December before (`runYearChange`).
+- Still measured against the size of the base, so a smaller shortfall reads as a rise whichever side of zero.
+- Test: `test/running.test.mjs` (updated, plus a year where several bad months are followed by one good one).
+
+---
+
 ## 2026-11-10 — Income / Expenses toggle on each sheet
 
 "I want a toggle tab between income and expenses on the sheets under each of the titles."

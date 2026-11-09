@@ -4621,14 +4621,31 @@ function runningSeries(){
   delete series[first].month; series[first].month=res[first]||0;
   return {series,last:lastYm,run:now,first};
 }
-/* The month's move in the running total, as a percentage of where it stood the
-   month before. Measured against the size of that total, so a smaller shortfall
-   reads as a rise and a bigger one as a fall, whichever side of zero it is on.
-   Nothing to compare against in the first month, or from exactly zero. */
+/* Where the running total stands against the start of the year, as a
+   percentage. January is measured against December; every later month against
+   January — so one good month after several bad ones doesn't turn the row
+   green on its own, it shows how far the year has come (Daniel, Nov 2026; it
+   used to be against the month before). If the data starts after January, the
+   first month there is takes January's place. Measured against the size of the
+   base, so a smaller shortfall reads as a rise, whichever side of zero. */
+function runBase(rs,ym){
+  const y=ym.slice(0,4);
+  let base=y+"-01";
+  if(!rs.series[base]) base=Object.keys(rs.series).filter(k=>k.slice(0,4)===y).sort()[0]||null;
+  return base;
+}
 function runChange(rs,ym){
-  const cur=rs.series[ym], prev=rs.series[ymAdd(ym,-1)];
-  if(!cur||!prev||cur.month==null||Math.abs(prev.run)<0.005) return null;
-  return (cur.run-prev.run)/Math.abs(prev.run)*100;
+  const cur=rs.series[ym]; if(!cur||cur.month==null) return null;
+  const b=runBase(rs,ym), baseYm=(!b||ym===b)?ymAdd(ym,-1):b, base=rs.series[baseYm];
+  if(!base||Math.abs(base.run)<0.005) return null;
+  return (cur.run-base.run)/Math.abs(base.run)*100;
+}
+/* The year as a whole: the last month's total against the December before. */
+function runYearChange(rs,year){
+  const ks=Object.keys(rs.series).filter(k=>k.slice(0,4)===String(year)).sort();
+  const end=rs.series[ks[ks.length-1]], dec=rs.series[(year-1)+"-12"];
+  if(!end||!dec||Math.abs(dec.run)<0.005) return null;
+  return (end.run-dec.run)/Math.abs(dec.run)*100;
 }
 /* The summary at the top of Sheet actuals: the year month by month — money in,
    money out, the result — then the running total and how it moved. */
@@ -4670,10 +4687,12 @@ function runningCard(year){
       ${row("<b>Month result</b>",c=>`<td class="r mono" style="font-weight:600">${c.t?fmt(c.t.net):"·"}</td>`,fmt(sum("net")))}
       ${rs?row("<b>Running total</b>",c=>`<td class="r mono" style="font-weight:600">${c.v?fmt(c.v.run):"·"}</td>`,"")
         :`<tr><td><b>Running total</b></td><td colspan="13" class="hint">Set where it starts, above, and it fills in here.</td></tr>`}
-      ${rs?row(`<span class="hint" title="How much the running total moved against the month before, as a share of where it stood">vs last month</span>`,c=>{
-        const p=runChange(rs,c.ym);
-        return `<td class="r mono" style="font-size:11px">${p==null?"·":Math.abs(p)<0.05?`<span class="hint">0%</span>`:`<span style="color:${tone(p)}">${p<0?"▼":"▲"} ${Math.abs(p)>=1000?"999+":Math.abs(p).toFixed(Math.abs(p)<10?1:0)}%</span>`}</td>`;
-      },""):""}
+      ${rs?(()=>{
+        const pc=p=>p==null?"·":Math.abs(p)<0.05?`<span class="hint">0%</span>`:`<span style="color:${tone(p)}">${p<0?"▼":"▲"} ${Math.abs(p)>=1000?"999+":Math.abs(p).toFixed(Math.abs(p)<10?1:0)}%</span>`;
+        return row(`<span class="hint" title="January against December; every later month against January — how far the running total has come since the start of the year">vs start of year</span>`,
+          c=>`<td class="r mono" style="font-size:11px">${pc(runChange(rs,c.ym))}</td>`,
+          `<span style="font-size:11px" title="The year's last month against the December before">${pc(runYearChange(rs,year))}</span>`);
+      })():""}
     </tbody></table></div>`:`<p class="hint" style="margin:0">Nothing sorted for ${year} yet.</p>`}
   </div></div>`;
 }
